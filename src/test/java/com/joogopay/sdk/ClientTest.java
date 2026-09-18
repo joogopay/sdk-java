@@ -3,6 +3,7 @@ package com.joogopay.sdk;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -85,6 +86,22 @@ class ClientTest {
         Client client = baseBuilder().baseUrl("https://127.0.0.1:9").timeout(Duration.ofSeconds(2)).build();
         JoogopayException e = assertThrows(JoogopayException.Transport.class, () -> client.getBalance("BRL"));
         assertFalse(e instanceof JoogopayException.Request);
+    }
+
+    /**
+     * Rejecting the key happens before anything is sent, so it must land in the same class
+     * as any other pre-send failure; a merchant reading Transport here would query an order
+     * that was never created.
+     */
+    @Test
+    void malformedIdempotencyKeyIsRequestAndNothingIsSent() throws IOException {
+        var captured = new Captured();
+        Client client = baseBuilder().transport(transport(captured, 200, new byte[0])).build();
+        assertThrows(JoogopayException.Request.class, () -> client.createPayment(Map.of(
+                "merchantOrderNo", "M1", "currency", "BRL", "amount", "1.00",
+                "paymentMethod", Map.of("code", "PIX", "pix", Map.of("payerName", "X")),
+                "webhookUrl", "https://m.example.com/w"), "my-key-123"));
+        assertNull(captured.url, "nothing reached the server");
     }
 
     @Test
@@ -564,6 +581,27 @@ class ClientTest {
                 "email", "m@example.com", "mobile", "9871476369"))));
     }
 
+
+    /** The five IDR wallet payouts are accepted under their own extra field and rejected under another's. */
+    @Test
+    void validateAcceptsIdrWalletPayouts() throws IOException {
+        Client c = validatingClient();
+        java.util.function.Function<String, Map<String, Object>> extra = wallet -> Map.of(
+                "bankCode", wallet, "accountName", "Budi", "email", "b@example.com", "mobile", "081234567890");
+        java.util.function.Function<Map<String, Object>, Map<String, Object>> payout =
+                m -> Map.of("merchantOrderNo", "M1", "currency", "IDR", "amount", "10000",
+                        "payoutMethod", m, "webhookUrl", "https://m.example.com/w");
+
+        for (String[] w : new String[][] {{"ID_DANA", "idDana", "DANA"}, {"ID_OVO", "idOvo", "OVO"},
+                {"ID_GOPAY", "idGopay", "GOPAY"}, {"ID_LINKAJA", "idLinkaja", "LINKAJA"},
+                {"ID_SHOPEEPAY", "idShopeepay", "SHOPEEPAY"}}) {
+            c.createPayout(payout.apply(Map.of("code", w[0], w[1], extra.apply(w[2]))));
+        }
+
+        var ex = assertThrows(JoogopayException.Request.class,
+                () -> c.createPayout(payout.apply(Map.of("code", "ID_DANA", "idOvo", extra.apply("OVO")))));
+        assertTrue(ex.getMessage().contains("does not match code"), ex.getMessage());
+    }
     // Top-level required fields and formats, from the shared validation vectors. A failure here
     // means the Java implementation disagrees with the protocol; fix the SDK, not the vectors.
 
@@ -623,4 +661,105 @@ class ClientTest {
         c.getPayoutReceipt("  P202608270001 ");
         assertEquals("https://api.example.com/api/v1/payouts/P202608270001/receipt", captured.url);
     }
+    @Test
+    void arsPayoutPreservesOptionalNullableAddressesAndRejectsOtherTypes() throws IOException {
+        Captured captured = new Captured();
+        Client client = baseBuilder().transport(transport(captured, 200, envelopeJson("{}"))).build();
+        JsonNode bodyKey = load("bodycrypt/001-sealed-box.json");
+        Map<String, Object> extra = new HashMap<>(Map.of(
+                "firstName", "Ana", "lastName", "Perez", "email", "ana@example.com", "phone", "1123456789",
+                "documentType", "DNI", "documentNumber", "30123456",
+                "accountNo", "0000003100012345678901", "accountType", "CBU"));
+        java.util.function.Function<Map<String, Object>, Map<String, Object>> request = fields -> Map.of(
+                "merchantOrderNo", "ars-address-001", "currency", "ARS", "amount", "1.00",
+                "webhookUrl", "https://merchant.example.com/webhook",
+                "payoutMethod", Map.of("code", "BANK_TRANSFER", "bankTransfer", fields));
+        for (String accountType : List.of("CBU", "CVU")) {
+            Map<String, Object> recipient = new HashMap<>(extra);
+            recipient.put("accountType", accountType);
+            var accepted = new java.util.ArrayList<Map<String, Object>>();
+            accepted.add(new HashMap<>(recipient));
+            for (String address : new String[]{null, "", " Av Example 123 "}) {
+                Map<String, Object> fields = new HashMap<>(recipient);
+                fields.put("address", address);
+                accepted.add(fields);
+            }
+            for (Map<String, Object> fields : accepted) {
+                Map<String, Object> input = request.apply(fields);
+                JsonNode expected = MAPPER.valueToTree(input);
+                client.createPayout(input);
+                var opened = Protocol.openBodyEnvelope(captured.body,
+                        B64.decode(bodyKey.get("platformBodyPublicKeyBase64").asText()),
+                        B64.decode(bodyKey.get("platformBodyPrivateKeyBase64").asText()));
+                assertEquals(expected, MAPPER.readTree(opened.getKey()));
+                assertEquals(expected, MAPPER.valueToTree(input), "caller input must remain unchanged");
+            }
+            byte[] lastBody = captured.body;
+            for (Object address : new Object[]{1, false, List.of(), Map.of()}) {
+                Map<String, Object> invalid = new HashMap<>(recipient);
+                invalid.put("address", address);
+                var error = assertThrows(JoogopayException.Request.class,
+                        () -> client.createPayout(request.apply(invalid)));
+                assertTrue(error.getMessage().contains("extra.address"));
+                assertTrue(captured.body == lastBody, "invalid address must fail before HTTP");
+            }
+            for (String field : recipient.keySet()) {
+                var invalidValues = new java.util.ArrayList<Map<String, Object>>();
+                Map<String, Object> missing = new HashMap<>(recipient);
+                missing.remove(field);
+                invalidValues.add(missing);
+                for (String empty : new String[]{null, "", "  "}) {
+                    Map<String, Object> invalid = new HashMap<>(recipient);
+                    invalid.put(field, empty);
+                    invalidValues.add(invalid);
+                }
+                for (Map<String, Object> invalid : invalidValues) {
+                    var error = assertThrows(JoogopayException.Request.class,
+                            () -> client.createPayout(request.apply(invalid)));
+                    assertTrue(error.getMessage().contains("extra." + field));
+                    assertTrue(captured.body == lastBody, field + " must fail before HTTP");
+                }
+            }
+        }
+    }
+
+    @Test
+    void usdWalletContract() throws Exception {
+        JsonNode fixture = load("methods/001-usd-wallets.json");
+        JsonNode bodyKey = load("bodycrypt/001-sealed-box.json");
+        var requests = new java.util.ArrayList<JsonNode>();
+        requests.add(fixture.get("payment"));
+        fixture.get("payouts").forEach(requests::add);
+        for (JsonNode request : requests) {
+            String methodField = request.has("paymentMethod") ? "paymentMethod" : "payoutMethod";
+            JsonNode method = request.get(methodField);
+            String branch = method.has("cashApp") ? "cashApp" : (method.has("paypal") ? "paypal" : "chime");
+            Captured captured = new Captured();
+            Client client = baseBuilder().transport(transport(captured, 200, envelopeJson("{}"))).build();
+            java.util.function.Function<JsonNode, Object> create = value -> {
+                Map<String, Object> map = MAPPER.convertValue(value, new com.fasterxml.jackson.core.type.TypeReference<>() {});
+                return methodField.equals("paymentMethod") ? client.createPayment(map) : client.createPayout(map);
+            };
+            create.apply(request);
+            var opened = Protocol.openBodyEnvelope(captured.body,
+                    B64.decode(bodyKey.get("platformBodyPublicKeyBase64").asText()),
+                    B64.decode(bodyKey.get("platformBodyPrivateKeyBase64").asText()));
+            assertEquals(request, MAPPER.readTree(opened.getKey()));
+            byte[] lastBody = captured.body;
+            for (String field : (Iterable<String>) () -> method.get(branch).fieldNames()) {
+                for (String empty : new String[] {null, "", "  "}) {
+                    var invalid = request.deepCopy();
+                    ((com.fasterxml.jackson.databind.node.ObjectNode) invalid.get(methodField).get(branch)).put(field, empty);
+                    assertThrows(JoogopayException.Request.class, () -> create.apply(invalid));
+                    assertTrue(captured.body == lastBody, field + " must fail before HTTP");
+                }
+            }
+            var formats = request.deepCopy();
+            method.get(branch).fieldNames().forEachRemaining(field ->
+                    ((com.fasterxml.jackson.databind.node.ObjectNode) formats.get(methodField).get(branch))
+                            .put(field, "format-is-checked-by-gateway"));
+            create.apply(formats);
+        }
+    }
+
 }

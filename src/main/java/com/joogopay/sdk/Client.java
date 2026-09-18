@@ -71,7 +71,27 @@ public final class Client {
         return new Builder();
     }
 
-    /** Client configuration; a missing or invalid field makes build() throw JoogopayException.Config. */
+    /**
+     * Client configuration; a missing or invalid field makes build() throw
+     * JoogopayException.Config.
+     *
+     * <p>baseUrl is scheme and host only, https; a path is rejected because the
+     * SDK appends the endpoint path itself.
+     *
+     * <p>merchantPrivateKeyBase64 takes either form of Ed25519 private key: the
+     * 32-byte seed libsodium and OpenSSL hand out, or the 64-byte seed plus
+     * public key.
+     *
+     * <p>platformBodyKeyId names which platform key seals the request body and
+     * travels in the envelope so the gateway knows which private key opens it; it
+     * must name the key given in platformBodyPublicKeyBase64, which is X25519,
+     * not the Ed25519 webhook key.
+     *
+     * <p>platformWebhookPublicKeys maps key id to platform Ed25519 public key and
+     * verifies webhook signatures, the opposite direction. The webhook names its
+     * key id, so this holds every key the platform may currently sign with;
+     * during a rotation that is two. Required even without webhooks.
+     */
     public static final class Builder {
         private String baseUrl;
         private String accessKey;
@@ -458,14 +478,29 @@ public final class Client {
 
         var need = new java.util.ArrayList<>(rule.required());
         need.addAll(rule.byMethod().getOrDefault(code, List.of()));
-        if (need.isEmpty()) {
+        var optionalNullableStrings = rule.optionalNullableStringsByMethod().getOrDefault(code, List.of());
+        if (need.isEmpty() && optionalNullableStrings.isEmpty()) {
             return;
         }
         Map<String, Object> extra = present.isEmpty() ? Map.of() : mapOf(method, present.get(0));
         for (String field : need) {
+            if (rule.allowEmpty().contains(field)) {
+                if (!(extra.get(field) instanceof String)) {
+                    throw new JoogopayException.Request(String.format(
+                            "sdk: extra.%s must be a string for %s %s", field, currency, code));
+                }
+                continue;
+            }
             if (isEmptyValue(extra.get(field))) {
                 throw new JoogopayException.Request(String.format(
                         "sdk: required extra field is empty: extra.%s for %s %s", field, currency, code));
+            }
+        }
+        for (String field : optionalNullableStrings) {
+            Object value = extra.get(field);
+            if (value != null && !(value instanceof String)) {
+                throw new JoogopayException.Request(String.format(
+                        "sdk: extra.%s must be a string or null for %s %s", field, currency, code));
             }
         }
     }

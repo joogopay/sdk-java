@@ -25,6 +25,7 @@ final class Rules {
             Map.entry("BREB", "breb"),
             Map.entry("CASH", "cash"),
             Map.entry("CASH_APP", "cashApp"),
+            Map.entry("CHIME", "chime"),
             Map.entry("CREDIT_CARD", "creditCard"),
             Map.entry("CVU", "cvu"),
             Map.entry("E_WALLET", "eWallet"),
@@ -47,6 +48,7 @@ final class Rules {
             Map.entry("PAGO46", "pago46"),
             Map.entry("PAGO_FACIL", "pagoFacil"),
             Map.entry("PAPARA", "papara"),
+            Map.entry("PAYPAL", "paypal"),
             Map.entry("PH_DF_BANK", "phDfBank"),
             Map.entry("PH_DF_WALLET", "phDfWallet"),
             Map.entry("PH_GCASH", "phGcash"),
@@ -80,7 +82,11 @@ final class Rules {
             Map.entry("WEBPAY", "webpay")
     );
 
-    record Rule(List<String> codes, List<String> required, Map<String, List<String>> byMethod) {}
+    record Rule(List<String> codes, List<String> required, Map<String, List<String>> byMethod, List<String> allowEmpty, Map<String, List<String>> optionalNullableStringsByMethod) {
+        Rule(List<String> codes, List<String> required, Map<String, List<String>> byMethod) {
+            this(codes, required, byMethod, List.of(), Map.of());
+        }
+    }
 
     static final Map<String, Rule> PAYMENT_METHOD_RULES = Map.ofEntries(
             Map.entry("ARS", new Rule(List.of(), List.of("documentNumber", "documentType", "email", "firstName", "lastName"), Map.ofEntries(Map.entry("CVU", List.of("phone")), Map.entry("QRIS", List.of("phone"))))),
@@ -94,11 +100,12 @@ final class Rules {
             Map.entry("PEN", new Rule(List.of("BANK_TRANSFER", "CASH", "E_WALLET"), List.of("customerEmail", "customerName", "customerPhone", "documentNumber", "documentType"), Map.of())),
             Map.entry("PHP", new Rule(List.of("PH_GCASH", "PH_GCASH_QR", "PH_GRAB", "PH_MAYA", "PH_MAYA_QR", "PH_NATIVE_GCASH", "PH_QRIS"), List.of(), Map.of())),
             Map.entry("PKR", new Rule(List.of("PK_EASYPAISA", "PK_EASYPAISA_QRPH", "PK_JAZZCASH", "PK_JAZZCASH_QRPH"), List.of(), Map.of())),
-            Map.entry("TRY", new Rule(List.of(), List.of("customerName"), Map.of()))
+            Map.entry("TRY", new Rule(List.of(), List.of("customerName"), Map.of())),
+            Map.entry("USD", new Rule(List.of("CASH_APP"), List.of("name", "phone", "email", "ipAddress"), Map.of()))
     );
 
     static final Map<String, Rule> PAYOUT_METHOD_RULES = Map.ofEntries(
-            Map.entry("ARS", new Rule(List.of(), List.of("accountNo", "accountType", "address", "documentNumber", "documentType", "email", "firstName", "lastName", "phone"), Map.of())),
+            Map.entry("ARS", new Rule(List.of(), List.of("accountNo", "accountType", "documentNumber", "documentType", "email", "firstName", "lastName", "phone"), Map.of(), List.of(), Map.ofEntries(Map.entry("BANK_TRANSFER", List.of("address"))))),
             Map.entry("BDT", new Rule(List.of("BD_BKASH", "BD_NAGAD"), List.of("accountName", "accountNo", "email", "mobile"), Map.of())),
             Map.entry("BRL", new Rule(List.of(), List.of("key", "keyType"), Map.of())),
             Map.entry("CLP", new Rule(List.of(), List.of("accountName", "accountNo", "accountType", "bankCode", "customerEmail", "customerPhone", "documentNumber", "documentType"), Map.of())),
@@ -109,7 +116,8 @@ final class Rules {
             Map.entry("PEN", new Rule(List.of("BANK_TRANSFER", "E_WALLET"), List.of("accountName", "accountNo", "bankCode", "customerEmail", "customerPhone", "documentNumber", "documentType"), Map.ofEntries(Map.entry("BANK_TRANSFER", List.of("accountType", "cciNo"))))),
             Map.entry("PHP", new Rule(List.of("PH_DF_BANK", "PH_DF_WALLET"), List.of("accountName", "accountNo", "bankCode", "email", "mobile"), Map.of())),
             Map.entry("PKR", new Rule(List.of("PK_BANK", "PK_EASYPAISA", "PK_JAZZCASH"), List.of("accountNo", "cnic", "mobile"), Map.ofEntries(Map.entry("PK_BANK", List.of("bankCode"))))),
-            Map.entry("TRY", new Rule(List.of(), List.of("accountName", "accountNo"), Map.ofEntries(Map.entry("BANK_TRANSFER", List.of("bankCode", "bankName")))))
+            Map.entry("TRY", new Rule(List.of(), List.of("accountName", "accountNo"), Map.ofEntries(Map.entry("BANK_TRANSFER", List.of("bankCode", "bankName"))))),
+            Map.entry("USD", new Rule(List.of("CASH_APP", "PAYPAL", "CHIME"), List.of("name", "phone", "email", "accountNo", "firstName", "lastName", "dateOfBirth", "countryOfResidence", "stateOfResidence", "cardCity", "cardStreet", "cardPostCode"), Map.of()))
     );
 
 }

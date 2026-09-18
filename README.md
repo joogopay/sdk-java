@@ -6,7 +6,7 @@ envelope yourself.
 
 ## Protocol
 
-[`protocol/`](protocol/) is the source of truth, and the Go / JavaScript / PHP / Python / Java
+[`protocol/`](https://github.com/joogopay/sdk-java/tree/main/protocol/) is the source of truth, and the Go / JavaScript / PHP / Python / Java
 SDKs share one set of test vectors:
 
 | Item | Approach |
@@ -26,14 +26,14 @@ Maven:
 <dependency>
   <groupId>com.joogopay</groupId>
   <artifactId>sdk</artifactId>
-  <version>0.1.0</version>
+  <version>0.1.1</version>
 </dependency>
 ```
 
 Gradle:
 
 ```
-implementation("com.joogopay:sdk:0.1.0")
+implementation("com.joogopay:sdk:0.1.1")
 ```
 
 Runtime dependencies: bouncycastle, jackson-databind. JDK 17 or newer.
@@ -88,15 +88,15 @@ System.out.println(order.get("orderNo") + " " + order.get("status"));
 | --- | --- | --- |
 | `JoogopayException.Request` | Rejected **before it was sent** (local validation, a bad parameter, or a request the SDK could not encode or sign) | Safe to mark failed; fix the request and retry under the same `merchantOrderNo` |
 | `JoogopayException.Transport` | Handed to the transport, no usable response (connection failure, timeout, interrupted read) | Outcome unknown; **never mark a payout failed**. Query by `merchantOrderNo`, or resend the identical request under the same number |
-| `JoogopayException.Api` | The gateway returned a business error (`msg` / `apiMessage` / `traceId`) | Branch on `msg`. `IDEMPOTENCY_CONFLICT`: the number is already in flight, query it and keep querying rather than switching numbers. `CHANNEL_ERROR`: the order may already exist, query by `merchantOrderNo` first |
+| `JoogopayException.Api` | The gateway returned a business error (`msg` / `apiMessage` / `traceId`) | Branch on `msg`. `IDEMPOTENCY_CONFLICT`: the number is taken but the platform could not return its order, query that number and keep querying rather than switching numbers. `CHANNEL_ERROR`: the order may already exist, query by `merchantOrderNo` first and reuse that number only once the query returns `ORDER_NOT_FOUND`. `CHANNEL_BUSY`: refused before the order was created, so resend the same number after a back-off; this is the only channel error that needs no query first |
 | `JoogopayException.Response` | The gateway or CDN returned something that is not an envelope (HTML 502, ...) | Outcome unknown; query before deciding |
 | `JoogopayException.ResponseTooLarge` | A response arrived but exceeded the size limit and was discarded | Outcome unknown; the order was most likely created, query before deciding |
 | Anything else | An unexpected error; assume the request may have arrived | Outcome unknown; query before deciding |
 
 **`merchantOrderNo` is the only key that prevents a duplicate order.** A second
 create with the same number never creates a second order: the platform answers
-with the original order, or with `IDEMPOTENCY_CONFLICT` while the first one is
-still being placed. The idempotency key travels with the request for tracing and
+with the original order, or with `IDEMPOTENCY_CONFLICT` when it recognises the
+number as taken but cannot return that order. The idempotency key travels with the request for tracing and
 is **not** a deduplication key.
 
 Two rules follow:
@@ -110,14 +110,14 @@ Two rules follow:
 
 The SDK validates locally before signing (top-level required fields and formats, method code
 shape and required fields); the rules are defined in
-[`protocol/merchant-api.md`](protocol/merchant-api.md#client-side-validation). Format checks
+[`protocol/merchant-api.md`](https://github.com/joogopay/sdk-java/blob/main/protocol/merchant-api.md#client-side-validation). Format checks
 such as phone length and e-mail are deliberately left to the gateway so the SDK cannot drift from it.
 
 ### Next steps
 
 Queries, idempotent retries and webhook verification are covered by the platform documentation
-at <https://docs.joogopay.com>; its examples map one to one onto this SDK. The wire protocol is in [`protocol/webhook.md`](protocol/webhook.md) and
-[`protocol/merchant-api.md`](protocol/merchant-api.md). Key points:
+at <https://docs.joogopay.com>; its examples map one to one onto this SDK. The wire protocol is in [`protocol/webhook.md`](https://github.com/joogopay/sdk-java/blob/main/protocol/webhook.md) and
+[`protocol/merchant-api.md`](https://github.com/joogopay/sdk-java/blob/main/protocol/merchant-api.md). Key points:
 
 - After a create request times out, query by `merchantOrderNo` first instead of resending a new order; a deliberate retry repeats the same call with the same `merchantOrderNo`.
 - For webhooks, hand the method, path, headers and the **unparsed raw body bytes** to `client.parsePaymentWebhook(method, path, headers, rawBody)`; when the webhook URL carries a query string, use the five-argument form and pass the raw query as well, because the platform signs it. The SDK checks the digest, event id, freshness window and Ed25519 signature. Return 2xx once processed and deduplicate by `eventId`.
@@ -147,6 +147,6 @@ There are exactly six: `PENDING` `PROCESSING` `SUCCEEDED` `FAILED` `EXPIRED` `CA
 mvn test
 ```
 
-The tests assert directly against the vectors in [`protocol/testdata`](protocol/testdata/):
+The tests assert directly against the vectors in [`protocol/testdata`](https://github.com/joogopay/sdk-java/tree/main/protocol/testdata/):
 `Signature-Input`, the signature base and the signature value are compared byte for byte, and
 body encryption is verified by opening ciphertext produced by the reference implementation.
