@@ -26,14 +26,14 @@ Maven:
 <dependency>
   <groupId>com.joogopay</groupId>
   <artifactId>sdk</artifactId>
-  <version>0.1.1</version>
+  <version>0.1.2</version>
 </dependency>
 ```
 
 Gradle:
 
 ```
-implementation("com.joogopay:sdk:0.1.1")
+implementation("com.joogopay:sdk:0.1.2")
 ```
 
 Runtime dependencies: bouncycastle, jackson-databind. JDK 17 or newer.

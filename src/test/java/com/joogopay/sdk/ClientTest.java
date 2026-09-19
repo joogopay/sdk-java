@@ -602,6 +602,29 @@ class ClientTest {
                 () -> c.createPayout(payout.apply(Map.of("code", "ID_DANA", "idOvo", extra.apply("OVO")))));
         assertTrue(ex.getMessage().contains("does not match code"), ex.getMessage());
     }
+
+    /** PH wallets: one code per wallet in both directions; bankCode only for the bank transfer. */
+    @Test
+    void validateAcceptsPhWalletPayouts() throws IOException {
+        Client c = validatingClient();
+        java.util.function.Supplier<Map<String, Object>> extra = () -> Map.of(
+                "accountNo", "09171234567", "accountName", "Juan",
+                "email", "j@example.com", "mobile", "09171234567");
+        java.util.function.Function<Map<String, Object>, Map<String, Object>> payout =
+                m -> Map.of("merchantOrderNo", "M1", "currency", "PHP", "amount", "100.00",
+                        "payoutMethod", m, "webhookUrl", "https://m.example.com/w");
+
+        for (String[] w : new String[][] {{"PH_GCASH", "phGcash"}, {"PH_MAYA", "phMaya"}}) {
+            c.createPayout(payout.apply(Map.of("code", w[0], w[1], extra.get())));
+        }
+
+        // PH_DF_WALLET is kept for existing integrations; there bankCode names the wallet.
+        for (String[] b : new String[][] {{"PH_DF_BANK", "phDfBank"}, {"PH_DF_WALLET", "phDfWallet"}}) {
+            var ex = assertThrows(JoogopayException.Request.class,
+                    () -> c.createPayout(payout.apply(Map.of("code", b[0], b[1], extra.get()))));
+            assertTrue(ex.getMessage().contains("extra.bankCode"), ex.getMessage());
+        }
+    }
     // Top-level required fields and formats, from the shared validation vectors. A failure here
     // means the Java implementation disagrees with the protocol; fix the SDK, not the vectors.
 
