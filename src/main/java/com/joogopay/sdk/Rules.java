@@ -110,7 +110,7 @@ final class Rules {
             Map.entry("BRL", new Rule(List.of("PIX"), List.of("key", "keyType"), Map.of())),
             Map.entry("CLP", new Rule(List.of("BANK_TRANSFER"), List.of("accountName", "accountNo", "accountType", "bankCode", "customerEmail", "customerPhone", "documentNumber", "documentType"), Map.of())),
             Map.entry("COP", new Rule(List.of("BANK_CARD", "BANK_TRANSFER", "BREB", "TRANSFIYA"), List.of("customerEmail", "customerName", "customerPhone", "documentNumber", "documentType"), Map.ofEntries(Map.entry("BANK_CARD", List.of("accountNo", "bankName")), Map.entry("BANK_TRANSFER", List.of("accountNo", "bankName")), Map.entry("BREB", List.of("accountNo"))))),
-            Map.entry("IDR", new Rule(List.of("ID_BANK_TRANSFER", "ID_DANA", "ID_GOPAY", "ID_LINKAJA", "ID_OVO", "ID_SHOPEEPAY"), List.of("accountName", "bankCode", "email", "mobile"), Map.of())),
+            Map.entry("IDR", new Rule(List.of("ID_BANK_TRANSFER", "ID_DANA", "ID_GOPAY", "ID_LINKAJA", "ID_OVO", "ID_SHOPEEPAY"), List.of("accountName", "accountNo", "bankCode", "email", "mobile"), Map.of())),
             Map.entry("INR", new Rule(List.of("IN_IFSC", "IN_UPI"), List.of("email", "mobile", "name"), Map.ofEntries(Map.entry("IN_IFSC", List.of("account", "ifsc"))))),
             Map.entry("MXN", new Rule(List.of("BANK_TRANSFER"), List.of("accountName", "accountNo", "accountType", "bankCode", "bankName"), Map.of())),
             Map.entry("PEN", new Rule(List.of("BANK_TRANSFER", "E_WALLET"), List.of("accountName", "accountNo", "bankCode", "customerEmail", "customerPhone", "documentNumber", "documentType"), Map.ofEntries(Map.entry("BANK_TRANSFER", List.of("accountType", "cciNo"))))),

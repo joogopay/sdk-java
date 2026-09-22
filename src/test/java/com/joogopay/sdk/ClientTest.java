@@ -242,6 +242,7 @@ class ClientTest {
         var order = client.queryPaymentByOrderNo("ORD202605190001");
         assertEquals("ORD202605190001", order.get("orderNo"));
         assertEquals(Status.SUCCEEDED, order.get("status"));
+        assertEquals(Map.of("name", "Maria Silva", "documentNumber", "01234567890"), order.get("payer"));
     }
 
     @Test
@@ -341,6 +342,59 @@ class ClientTest {
         assertEquals(Status.SUCCEEDED, payload.get("status"));
         assertEquals("100.50", payload.get("amount"));
         assertEquals("100.50", payload.get("paidAmount"));
+        assertFalse(payload.containsKey("payer"));
+    }
+
+    @Test
+    void parsePaymentWebhookPayer() throws IOException {
+        JsonNode hook = load("webhook/002-payment-payer.json");
+        Client client = baseBuilder()
+                .clock(() -> 1787803300L)
+                .platformWebhookPublicKeys(Map.of(
+                        hook.get("key").get("platformWebhookKeyId").asText(),
+                        hook.get("key").get("platformWebhookPublicKeyBase64").asText()))
+                .transport(transport(new Captured(), 200, envelopeJson("{}")))
+                .build();
+        var input = hook.get("input");
+        var payload = client.parsePaymentWebhook(input.get("method").asText(),
+                input.get("path").asText(), hookHeaders(hook),
+                hook.get("body").asText().getBytes(StandardCharsets.UTF_8),
+                input.get("rawQuery").asText());
+        assertEquals(Map.of("name", "Maria Silva", "documentNumber", "01234567890"), payload.get("payer"));
+        assertEquals("100.50", payload.get("amount"));
+        assertEquals("100.50", payload.get("paidAmount"));
+    }
+
+    @Test
+    void paymentWebhookRejectsAlteredPayer() throws IOException {
+        JsonNode hook = load("webhook/002-payment-payer.json");
+        Client client = baseBuilder()
+                .clock(() -> 1787803300L)
+                .platformWebhookPublicKeys(Map.of(
+                        hook.get("key").get("platformWebhookKeyId").asText(),
+                        hook.get("key").get("platformWebhookPublicKeyBase64").asText()))
+                .transport(transport(new Captured(), 200, envelopeJson("{}")))
+                .build();
+        for (String field : List.of("name", "documentNumber")) {
+            for (boolean refreshDigest : List.of(false, true)) {
+                var payload = MAPPER.readTree(hook.get("body").asText());
+                ((com.fasterxml.jackson.databind.node.ObjectNode) payload.get("payer"))
+                        .put(field, field.equals("name") ? "Other Name" : "11234567890");
+                byte[] body = MAPPER.writeValueAsBytes(payload);
+                var headers = hookHeaders(hook);
+                if (refreshDigest) {
+                    headers.put("Content-Digest", Protocol.contentDigestSha256(body));
+                }
+                Class<? extends JoogopayException> expectedError = refreshDigest
+                        ? JoogopayException.InvalidSignature.class : JoogopayException.Webhook.class;
+                assertThrows(expectedError,
+                        () -> client.parsePaymentWebhook(
+                                hook.get("input").get("method").asText(),
+                                hook.get("input").get("path").asText(), headers, body,
+                                hook.get("input").get("rawQuery").asText()),
+                        "altered payer." + field + ", refreshed digest=" + refreshDigest);
+            }
+        }
     }
 
     @Test
@@ -586,8 +640,10 @@ class ClientTest {
     @Test
     void validateAcceptsIdrWalletPayouts() throws IOException {
         Client c = validatingClient();
+        // accountNo is the wallet-registered phone number and receives the funds; mobile is a contact number.
         java.util.function.Function<String, Map<String, Object>> extra = wallet -> Map.of(
-                "bankCode", wallet, "accountName", "Budi", "email", "b@example.com", "mobile", "081234567890");
+                "bankCode", wallet, "accountNo", "081234567890", "accountName", "Budi",
+                "email", "b@example.com", "mobile", "089999999999");
         java.util.function.Function<Map<String, Object>, Map<String, Object>> payout =
                 m -> Map.of("merchantOrderNo", "M1", "currency", "IDR", "amount", "10000",
                         "payoutMethod", m, "webhookUrl", "https://m.example.com/w");
@@ -601,6 +657,13 @@ class ClientTest {
         var ex = assertThrows(JoogopayException.Request.class,
                 () -> c.createPayout(payout.apply(Map.of("code", "ID_DANA", "idOvo", extra.apply("OVO")))));
         assertTrue(ex.getMessage().contains("does not match code"), ex.getMessage());
+
+        // accountNo is required for wallets as well; mobile never stands in for it.
+        var noAccount = new java.util.HashMap<>(extra.apply("DANA"));
+        noAccount.put("accountNo", "");
+        var missing = assertThrows(JoogopayException.Request.class,
+                () -> c.createPayout(payout.apply(Map.of("code", "ID_DANA", "idDana", noAccount))));
+        assertTrue(missing.getMessage().contains("extra.accountNo"), missing.getMessage());
     }
 
     /** PH wallets: one code per wallet in both directions; bankCode only for the bank transfer. */
