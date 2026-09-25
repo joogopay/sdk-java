@@ -848,4 +848,25 @@ class ClientTest {
         }
     }
 
+    @Test
+    void payoutRefundQueryAndSignedWebhook() throws IOException {
+        JsonNode response = load("responses/005-payout-refunded.json");
+        JsonNode hook = load("webhook/003-payout-refunded.json");
+        Client client = baseBuilder().clock(() -> 1787803300L)
+                .platformWebhookPublicKeys(Map.of(hook.get("key").get("platformWebhookKeyId").asText(),
+                        hook.get("key").get("platformWebhookPublicKeyBase64").asText()))
+                .transport(transport(new Captured(), 200, MAPPER.writeValueAsBytes(response.get("body"))))
+                .build();
+        var order = client.queryPayoutByOrderNo("PO202609240001");
+        var input = hook.get("input");
+        var payload = client.parsePayoutWebhook(input.get("method").asText(), input.get("path").asText(),
+                hookHeaders(hook), hook.get("body").asText().getBytes(StandardCharsets.UTF_8), input.get("rawQuery").asText());
+        for (var result : java.util.List.of(order, payload)) {
+            assertEquals(Status.REFUNDED, result.get("status"));
+            assertEquals("R202609240001", result.get("refundNo"));
+            assertEquals("100.00", result.get("refundAmount"));
+            assertEquals(1790208000000L, ((Number) result.get("refundTime")).longValue());
+        }
+    }
+
 }

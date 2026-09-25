@@ -16,20 +16,20 @@ public final class Status {
     public static final String FAILED = "FAILED";
     public static final String EXPIRED = "EXPIRED";
     public static final String CANCELED = "CANCELED";
+    public static final String REFUNDED = "REFUNDED";
 
     /**
-     * The six external statuses shared by the API, webhooks and the hosted checkout; the former
-     * PAID, CREATED and EXCEPTION are retired.
+     * Public order statuses. REFUNDED is payout-only; checkout progress is unchanged.
      */
     public static final Set<String> ALL =
-            Set.of(PENDING, PROCESSING, SUCCEEDED, FAILED, EXPIRED, CANCELED);
+            Set.of(PENDING, PROCESSING, SUCCEEDED, FAILED, EXPIRED, CANCELED, REFUNDED);
 
     public static final String WEBHOOK_ORDER_TYPE_PAYMENT = "PAYMENT";
     public static final String WEBHOOK_ORDER_TYPE_PAYOUT = "PAYOUT";
 
     /** Public money fields; the guard test asserts each one is a decimal string. */
     public static final List<String> MONEY_FIELDS = List.of(
-            "amount", "paidAmount", "minAmount", "maxAmount", "usdRate",
+            "amount", "paidAmount", "refundAmount", "minAmount", "maxAmount", "usdRate",
             "balance", "lockBalance", "paymentBalance", "paymentLockBalance",
             "payoutBalance", "payoutLockBalance");
 
