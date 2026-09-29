@@ -533,6 +533,77 @@ class ClientTest {
     }
 
     @Test
+    void supplementPaymentIsSignedEncryptedPostWithOneLocator() throws IOException {
+        JsonNode bodyVector = load("bodycrypt/001-sealed-box.json");
+        var captured = new Captured();
+        Client client = baseBuilder()
+                .transport(transport(captured, 200, envelopeJson(
+                        "{\"orderNo\":\"P1\",\"merchantOrderNo\":\"M1\",\"status\":\"PROCESSING\","
+                                + "\"amount\":\"100.00\",\"currency\":\"INR\"}")))
+                .build();
+
+        var byOrderNo = new HashMap<String, Object>();
+        byOrderNo.put("orderNo", " P1 ");
+        byOrderNo.put("tradeNo", " 123456789012 ");
+        var byMerchantOrderNo = new HashMap<String, Object>();
+        byMerchantOrderNo.put("merchantOrderNo", "M1");
+        byMerchantOrderNo.put("orderNo", " ");
+        byMerchantOrderNo.put("tradeNo", "123456789012");
+
+        for (var tc : List.of(
+                Map.entry(byOrderNo, "{\"orderNo\":\"P1\",\"tradeNo\":\"123456789012\"}"),
+                Map.entry(byMerchantOrderNo, "{\"merchantOrderNo\":\"M1\",\"tradeNo\":\"123456789012\"}"))) {
+            String key = Protocol.newNonce();
+            var order = client.supplementPayment(tc.getKey(), key);
+            assertEquals("P1", order.get("orderNo"));
+            assertEquals(Status.PROCESSING, order.get("status"));
+
+            assertEquals("POST", captured.method);
+            assertEquals("https://api.example.com/api/v1/payments/trade-no", captured.url);
+            assertEquals(Protocol.CONTENT_ENCRYPTION, captured.headers.get("content-encryption"));
+            assertEquals(key, captured.headers.get("idempotency-key"));
+            assertEquals("mak_live_test", captured.headers.get("merchant-access-key"));
+            assertTrue(captured.headers.get("signature").startsWith("merchant=:"));
+            assertEquals(Protocol.contentDigestSha256(captured.body), captured.headers.get("content-digest"));
+            var opened = Protocol.openBodyEnvelope(
+                    captured.body,
+                    B64.decode(bodyVector.get("platformBodyPublicKeyBase64").asText()),
+                    B64.decode(bodyVector.get("platformBodyPrivateKeyBase64").asText()));
+            assertEquals(MAPPER.readTree(tc.getValue()), MAPPER.readTree(opened.getKey()));
+        }
+    }
+
+    @Test
+    void supplementPaymentValidatesLocally() throws IOException {
+        var captured = new Captured();
+        Client client = baseBuilder().transport(transport(captured, 200, envelopeJson("{}"))).build();
+        for (var tc : List.<Map<String, Object>>of(
+                Map.of("orderNo", "P1"),
+                Map.of("orderNo", "P1", "tradeNo", " "),
+                Map.of("tradeNo", "123456789012"),
+                Map.of("orderNo", "P1", "merchantOrderNo", "M1", "tradeNo", "123456789012"))) {
+            assertThrows(JoogopayException.Request.class, () -> client.supplementPayment(tc),
+                    tc.toString());
+        }
+        assertNull(captured.url, "nothing reached the server");
+    }
+
+    @Test
+    void supplementPaymentChannelErrorIsApiException() throws IOException {
+        Client client = baseBuilder()
+                .transport(transport(new Captured(), 422, ("{\"code\":12100019,\"msg\":\"CHANNEL_ERROR\","
+                        + "\"traceId\":\"trace-ch\",\"data\":{\"message\":\"channel did not accept the reference\"}}")
+                        .getBytes(StandardCharsets.UTF_8)))
+                .build();
+        var error = assertThrows(JoogopayException.Api.class,
+                () -> client.supplementPayment(Map.of("orderNo", "P1", "tradeNo", "123456789012")));
+        assertEquals(422, error.httpStatus);
+        assertEquals(12100019, error.code);
+        assertEquals("CHANNEL_ERROR", error.msg);
+        assertEquals("channel did not accept the reference", error.apiMessage);
+    }
+
+    @Test
     void addPaymentExtraInfoOmitsOptionalFields() throws IOException {
         var captured = new Captured();
         Client client = baseBuilder()

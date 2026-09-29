@@ -26,14 +26,14 @@ Maven:
 <dependency>
   <groupId>com.joogopay</groupId>
   <artifactId>sdk</artifactId>
-  <version>0.2.0</version>
+  <version>0.3.0</version>
 </dependency>
 ```
 
 Gradle:
 
 ```
-implementation("com.joogopay:sdk:0.2.0")
+implementation("com.joogopay:sdk:0.3.0")
 ```
 
 Runtime dependencies: bouncycastle, jackson-databind. JDK 17 or newer.
@@ -120,6 +120,7 @@ at <https://docs.joogopay.com>; its examples map one to one onto this SDK. The w
 [`protocol/merchant-api.md`](https://github.com/joogopay/sdk-java/blob/main/protocol/merchant-api.md). Key points:
 
 - After a create request times out, query by `merchantOrderNo` first instead of resending a new order; a deliberate retry repeats the same call with the same `merchantOrderNo`.
+- When the payer has transferred but the payment is still `PROCESSING`, submit their transfer reference with `client.supplementPayment(Map.of("orderNo", orderNo, "tradeNo", utr))` (or `merchantOrderNo` instead of `orderNo`, never both). Success only means the channel accepted the reference; the final status still comes from the webhook or a query.
 - For webhooks, hand the method, path, headers and the **unparsed raw body bytes** to `client.parsePaymentWebhook(method, path, headers, rawBody)`; when the webhook URL carries a query string, use the five-argument form and pass the raw query as well, because the platform signs it. The SDK checks the digest, event id, freshness window and Ed25519 signature. Return 2xx once processed and deduplicate by `eventId`.
 
 ## Amounts

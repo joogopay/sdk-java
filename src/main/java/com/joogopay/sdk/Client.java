@@ -270,6 +270,38 @@ public final class Client {
         return write("/api/v1/payouts", request, idempotencyKey);
     }
 
+    public Map<String, Object> supplementPayment(Map<String, Object> request) {
+        return supplementPayment(request, null);
+    }
+
+    /**
+     * Submits the payer's transfer reference ({@code tradeNo}) for a payment order that is still
+     * PROCESSING so the platform can have the channel match it. Exactly one of {@code orderNo} or
+     * {@code merchantOrderNo} locates the order. A successful response only means the channel
+     * accepted the reference; the final status still arrives through the webhook or a query. The
+     * tradeNo format is validated by the platform per currency, not here.
+     */
+    public Map<String, Object> supplementPayment(Map<String, Object> request, String idempotencyKey) {
+        String orderNo = str(request, "orderNo").trim();
+        String merchantOrderNo = str(request, "merchantOrderNo").trim();
+        String tradeNo = str(request, "tradeNo").trim();
+        if (tradeNo.isEmpty()) {
+            throw new JoogopayException.Request("sdk: required field is empty: tradeNo");
+        }
+        if (orderNo.isEmpty() == merchantOrderNo.isEmpty()) {
+            throw new JoogopayException.Request(
+                    "sdk: exactly one of orderNo or merchantOrderNo is required");
+        }
+        var body = new LinkedHashMap<String, Object>();
+        if (!orderNo.isEmpty()) {
+            body.put("orderNo", orderNo);
+        } else {
+            body.put("merchantOrderNo", merchantOrderNo);
+        }
+        body.put("tradeNo", tradeNo);
+        return write("/api/v1/payments/trade-no", body, idempotencyKey);
+    }
+
     public Map<String, Object> queryPaymentByOrderNo(String orderNo) {
         return read("/api/v1/payments", Map.of("orderNo", orderNo));
     }
