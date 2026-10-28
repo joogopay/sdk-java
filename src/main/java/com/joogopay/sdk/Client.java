@@ -1,11 +1,10 @@
 package com.joogopay.sdk;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.net.URLEncoder;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Base64;
@@ -17,23 +16,32 @@ import java.util.Map;
 import java.util.function.LongSupplier;
 import java.util.regex.Pattern;
 
+import org.apache.hc.client5.http.classic.methods.HttpUriRequestBase;
+import org.apache.hc.client5.http.config.RequestConfig;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.client5.http.impl.classic.HttpClients;
+import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
+import org.apache.hc.core5.http.ContentType;
+import org.apache.hc.core5.http.io.entity.ByteArrayEntity;
+import org.apache.hc.core5.util.Timeout;
+
 /**
  * Merchant API client.
  *
  * <p>Signing, digests and body encryption are done by the SDK; callers hold the configuration
  * and build business requests, and never touch Signature-Input, Content-Digest or the envelope.
  *
- * <p>HTTP goes through the JDK's built-in java.net.http; the only runtime dependencies are
- * BouncyCastle and Jackson.
+ * <p>The default HTTP transport uses Apache HttpClient 5 without automatic retries or redirects.
  */
-public final class Client {
+public final class Client implements AutoCloseable {
 
     private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(30);
     private static final int DEFAULT_MAX_RESPONSE_BYTES = 8 << 20;
+    static final int DEFAULT_MAX_CONNECTIONS = 50;
     private static final String DEFAULT_USER_AGENT = "merchant-sdk-java";
     private static final String DEFAULT_ACCEPT_LANGUAGE = "en-US";
 
-    /** Sends one HTTP request; an implementation can replace the built-in java.net.http transport. */
+    /** Sends one HTTP request; an implementation can replace the built-in HTTP transport. */
     @FunctionalInterface
     public interface Transport {
         /** Returns the HTTP status code and the raw response body. */
@@ -51,6 +59,8 @@ public final class Client {
     private final String acceptLanguage;
     private final int maxResponseBytes;
     private final Transport transport;
+    private final boolean ownsTransport;
+    private final java.util.concurrent.atomic.AtomicBoolean closed = new java.util.concurrent.atomic.AtomicBoolean();
     private final LongSupplier clock;
 
     private Client(Builder builder) {
@@ -59,12 +69,21 @@ public final class Client {
         this.merchantPrivateKey = builder.merchantPrivateKey;
         this.bodyKeyId = builder.bodyKeyId;
         this.bodyPublicKey = builder.bodyPublicKey;
-        this.webhookKeys = Map.copyOf(builder.webhookKeys);
+        this.webhookKeys = Collections8.mapCopy(builder.webhookKeys);
         this.userAgent = builder.userAgent;
         this.acceptLanguage = builder.acceptLanguage;
         this.maxResponseBytes = builder.maxResponseBytes;
-        this.transport = builder.transport;
+        this.ownsTransport = builder.transport == null;
+        this.transport = ownsTransport
+                ? new HttpClientTransport(builder.timeout, builder.maxResponseBytes, builder.maxConnections) : builder.transport;
         this.clock = builder.clock;
+    }
+
+    /** Closes the SDK-owned connection pool; an injected transport remains owned by its caller. */
+    @Override
+    public void close() {
+        closed.set(true);
+        if (ownsTransport) ((HttpClientTransport) transport).close();
     }
 
     public static Builder builder() {
@@ -103,6 +122,7 @@ public final class Client {
         private String userAgent = DEFAULT_USER_AGENT;
         private String acceptLanguage = DEFAULT_ACCEPT_LANGUAGE;
         private int maxResponseBytes = DEFAULT_MAX_RESPONSE_BYTES;
+        private int maxConnections = DEFAULT_MAX_CONNECTIONS;
         private Transport transport;
         private LongSupplier clock = () -> System.currentTimeMillis() / 1000L;
 
@@ -111,7 +131,7 @@ public final class Client {
         private String rawMerchantPrivateKey;
         private String rawBodyKeyId;
         private String rawBodyPublicKey;
-        private Map<String, String> rawWebhookKeys = Map.of();
+        private Map<String, String> rawWebhookKeys = Collections8.map();
 
         public Builder baseUrl(String value) {
             this.rawBaseUrl = value;
@@ -139,7 +159,7 @@ public final class Client {
         }
 
         public Builder platformWebhookPublicKeys(Map<String, String> value) {
-            this.rawWebhookKeys = value == null ? Map.of() : value;
+            this.rawWebhookKeys = value == null ? Collections8.map() : value;
             return this;
         }
 
@@ -165,6 +185,12 @@ public final class Client {
 
         public Builder transport(Transport value) {
             this.transport = value;
+            return this;
+        }
+
+        /** Limits total and per-route connections in the default transport; ignored by custom transports. */
+        public Builder maxConnections(int value) {
+            this.maxConnections = value;
             return this;
         }
 
@@ -201,14 +227,14 @@ public final class Client {
             if (accessKey.isEmpty()) {
                 throw new JoogopayException.Config("sdk: accessKey is required");
             }
-            merchantPrivateKey = decodeKey(rawMerchantPrivateKey, List.of(32, 64),
+            merchantPrivateKey = decodeKey(rawMerchantPrivateKey, Collections8.list(32, 64),
                     "merchant Ed25519 private key");
             bodyKeyId = trimOrEmpty(rawBodyKeyId);
             if (bodyKeyId.isEmpty()) {
                 throw new JoogopayException.Config("sdk: platformBodyKeyId is required");
             }
             bodyPublicKey = decodeKey(rawBodyPublicKey,
-                    List.of(Protocol.X25519_PUBLIC_KEY_SIZE), "platform X25519 public key");
+                    Collections8.list(Protocol.X25519_PUBLIC_KEY_SIZE), "platform X25519 public key");
             if (rawWebhookKeys.isEmpty()) {
                 throw new JoogopayException.Config(
                         "sdk: platformWebhookPublicKeys is required");
@@ -220,12 +246,15 @@ public final class Client {
                             "sdk: platform webhook key id must not be empty");
                 }
                 webhookKeys.put(id, decodeKey(value,
-                        List.of(Protocol.ED25519_PUBLIC_KEY_SIZE),
+                        Collections8.list(Protocol.ED25519_PUBLIC_KEY_SIZE),
                         "platform webhook Ed25519 public key"));
             });
 
-            if (transport == null) {
-                transport = new HttpClientTransport(timeout);
+            if (maxResponseBytes <= 0 || maxResponseBytes == Integer.MAX_VALUE) {
+                throw new JoogopayException.Config("sdk: maxResponseBytes must be between 1 and 2147483646");
+            }
+            if (maxConnections <= 0) {
+                throw new JoogopayException.Config("sdk: maxConnections must be positive");
             }
             return new Client(this);
         }
@@ -292,7 +321,7 @@ public final class Client {
             throw new JoogopayException.Request(
                     "sdk: exactly one of orderNo or merchantOrderNo is required");
         }
-        var body = new LinkedHashMap<String, Object>();
+        LinkedHashMap<String, Object> body = new LinkedHashMap<String, Object>();
         if (!orderNo.isEmpty()) {
             body.put("orderNo", orderNo);
         } else {
@@ -303,32 +332,32 @@ public final class Client {
     }
 
     public Map<String, Object> queryPaymentByOrderNo(String orderNo) {
-        return read("/api/v1/payments", Map.of("orderNo", orderNo));
+        return read("/api/v1/payments", Collections8.map("orderNo", orderNo));
     }
 
     public Map<String, Object> queryPaymentByMerchantOrderNo(String merchantOrderNo) {
-        return read("/api/v1/payments", Map.of("merchantOrderNo", merchantOrderNo));
+        return read("/api/v1/payments", Collections8.map("merchantOrderNo", merchantOrderNo));
     }
 
     public Map<String, Object> queryPayoutByOrderNo(String orderNo) {
-        return read("/api/v1/payouts", Map.of("orderNo", orderNo));
+        return read("/api/v1/payouts", Collections8.map("orderNo", orderNo));
     }
 
     public Map<String, Object> queryPayoutByMerchantOrderNo(String merchantOrderNo) {
-        return read("/api/v1/payouts", Map.of("merchantOrderNo", merchantOrderNo));
+        return read("/api/v1/payouts", Collections8.map("merchantOrderNo", merchantOrderNo));
     }
 
     public Map<String, Object> getPayoutReceipt(String orderNo) {
         String value = validatePathOrderNo(orderNo);
-        return read("/api/v1/payouts/" + pathEscape(value) + "/receipt", Map.of());
+        return read("/api/v1/payouts/" + pathEscape(value) + "/receipt", Collections8.map());
     }
 
     public Map<String, Object> getBalance(String currency) {
-        return read("/api/v1/balances", Map.of("currency", currency));
+        return read("/api/v1/balances", Collections8.map("currency", currency));
     }
 
     public Map<String, Object> getUsdRate(String currency, String payMethod) {
-        return read("/api/v1/usd-rates", Map.of("currency", currency, "payMethod", payMethod));
+        return read("/api/v1/usd-rates", Collections8.map("currency", currency, "payMethod", payMethod));
     }
 
     /** Public hosted-checkout query: unsigned and unencrypted. */
@@ -352,7 +381,7 @@ public final class Client {
         if (no.isEmpty() || trade.isEmpty()) {
             throw new JoogopayException.Request("sdk: invalid query parameter");
         }
-        var body = new LinkedHashMap<String, Object>();
+        LinkedHashMap<String, Object> body = new LinkedHashMap<String, Object>();
         body.put("orderNo", no);
         body.put("tradeNo", trade);
         return publicPost("/api/v1/payment/submitTradeNo", body);
@@ -369,7 +398,7 @@ public final class Client {
         if (no.isEmpty()) {
             throw new JoogopayException.Request("sdk: invalid query parameter");
         }
-        var body = new LinkedHashMap<String, Object>();
+        LinkedHashMap<String, Object> body = new LinkedHashMap<String, Object>();
         body.put("orderNo", no);
         String method = payMethod == null ? "" : payMethod.trim();
         if (!method.isEmpty()) {
@@ -383,7 +412,7 @@ public final class Client {
 
     /** Unauthenticated POST: plain JSON, unsigned and unencrypted. */
     private Map<String, Object> publicPost(String path, Map<String, Object> body) {
-        var headers = new LinkedHashMap<String, String>();
+        LinkedHashMap<String, String> headers = new LinkedHashMap<String, String>();
         headers.put("Content-Type", "application/json");
         return send(baseUrl + path, "POST", headers, Json.write(body));
     }
@@ -393,7 +422,7 @@ public final class Client {
     private static final Pattern NON_ZERO_DIGIT = Pattern.compile("[1-9]");
 
     private static boolean isEmptyValue(Object value) {
-        return value == null || (value instanceof String text && text.trim().isEmpty());
+        return value == null || (value instanceof String && ((String) value).trim().isEmpty());
     }
 
     /**
@@ -404,11 +433,12 @@ public final class Client {
         if (value == null || "".equals(value)) {
             throw new JoogopayException.Request("sdk: required field is empty: " + field);
         }
-        if (!(value instanceof String text)) {
+        if (!(value instanceof String)) {
             throw new JoogopayException.Request("sdk: " + field
                     + " must be a decimal string such as \"100.00\", got "
                     + value.getClass().getSimpleName());
         }
+        String text = (String) value;
         if (!AMOUNT.matcher(text).matches()) {
             throw new JoogopayException.Request(
                     "sdk: " + field + " must be a positive decimal string: '" + text + "'");
@@ -420,9 +450,10 @@ public final class Client {
 
     /** Mirrors the gateway rule: an absolute URL starting with https://. */
     private static void validateWebhookUrl(String field, Object value) {
-        if (!(value instanceof String text) || isEmptyValue(text)) {
+        if (!(value instanceof String) || isEmptyValue(value)) {
             throw new JoogopayException.Request("sdk: required field is empty: " + field);
         }
+        String text = (String) value;
         if (!text.toLowerCase(Locale.ROOT).startsWith(Rules.WEBHOOK_URL_PREFIX)) {
             String scheme = Rules.WEBHOOK_URL_PREFIX.replaceAll("://$", "");
             throw new JoogopayException.Request(
@@ -435,7 +466,7 @@ public final class Client {
      * encrypted round trip that would only end in INVALID_FIELD.
      */
     private static void validateCreateCommon(Map<String, Object> body) {
-        Map<String, Object> b = body == null ? Map.of() : body;
+        Map<String, Object> b = body == null ? Collections8.map() : body;
         for (String field : Rules.CREATE_REQUIRED_TEXT_FIELDS) {
             if (isEmptyValue(b.get(field))) {
                 throw new JoogopayException.Request("sdk: required field is empty: " + field);
@@ -462,7 +493,7 @@ public final class Client {
     @SuppressWarnings("unchecked")
     private static Map<String, Object> mapOf(Map<String, Object> m, String key) {
         Object v = m == null ? null : m.get(key);
-        return v instanceof Map ? (Map<String, Object>) v : Map.of();
+        return v instanceof Map ? (Map<String, Object>) v : Collections8.map();
     }
 
     /**
@@ -479,8 +510,8 @@ public final class Client {
             throw new JoogopayException.Request("sdk: method code is required");
         }
 
-        var present = new java.util.ArrayList<String>();
-        for (var e : method.entrySet()) {
+        java.util.ArrayList<String> present = new java.util.ArrayList<String>();
+        for (Map.Entry<String, Object> e : method.entrySet()) {
             if (!"code".equals(e.getKey()) && e.getValue() != null) {
                 present.add(e.getKey());
             }
@@ -508,13 +539,13 @@ public final class Client {
                     "sdk: method is not available for this currency: " + code + " for " + currency);
         }
 
-        var need = new java.util.ArrayList<>(rule.required());
-        need.addAll(rule.byMethod().getOrDefault(code, List.of()));
-        var optionalNullableStrings = rule.optionalNullableStringsByMethod().getOrDefault(code, List.of());
+        java.util.ArrayList<String> need = new java.util.ArrayList<>(rule.required());
+        need.addAll(rule.byMethod().getOrDefault(code, Collections8.list()));
+        List<String> optionalNullableStrings = rule.optionalNullableStringsByMethod().getOrDefault(code, Collections8.list());
         if (need.isEmpty() && optionalNullableStrings.isEmpty()) {
             return;
         }
-        Map<String, Object> extra = present.isEmpty() ? Map.of() : mapOf(method, present.get(0));
+        Map<String, Object> extra = present.isEmpty() ? Collections8.map() : mapOf(method, present.get(0));
         for (String field : need) {
             if (rule.allowEmpty().contains(field)) {
                 if (!(extra.get(field) instanceof String)) {
@@ -543,7 +574,7 @@ public final class Client {
         if (method == null || !method.toUpperCase(Locale.ROOT).equals("POST")) {
             throw new JoogopayException.Webhook("sdk: webhook must be POST");
         }
-        var lowered = new HashMap<String, String>();
+        HashMap<String, String> lowered = new HashMap<String, String>();
         if (headers != null) {
             headers.forEach((k, v) -> lowered.put(k.toLowerCase(Locale.ROOT), v));
         }
@@ -573,7 +604,7 @@ public final class Client {
             throw new JoogopayException.Webhook("sdk: webhook event id mismatch");
         }
 
-        var params = Protocol.parsePlatformSignatureInput(
+        Protocol.SignatureParams params = Protocol.parsePlatformSignatureInput(
                 lowered.getOrDefault(Protocol.HEADER_SIGNATURE_INPUT.toLowerCase(Locale.ROOT), ""));
         Protocol.validateSignatureParams(params, clock.getAsLong());
         byte[] publicKey = webhookKeys.get(params.keyId());
@@ -626,7 +657,7 @@ public final class Client {
     }
 
     private static boolean isBlank(Object value) {
-        return !(value instanceof String text) || text.isEmpty();
+        return !(value instanceof String) || ((String) value).isEmpty();
     }
 
     private Map<String, Object> write(String path, Map<String, Object> body, String idempotencyKey) {
@@ -634,16 +665,16 @@ public final class Client {
         byte[] wireBody;
         Map<String, String> headers;
         try {
-            String key = idempotencyKey == null || idempotencyKey.isBlank()
+            String key = idempotencyKey == null || idempotencyKey.codePoints().allMatch(Character::isWhitespace)
                     ? Protocol.newNonce()
                     : idempotencyKey.trim();
             Protocol.validateIdempotencyKey(key);
 
             wireBody = Protocol.sealBodyEnvelope(Json.write(body), bodyPublicKey, bodyKeyId);
-            var params = Protocol.newMerchantWriteSignatureParams(
+            Protocol.SignatureParams params = Protocol.newMerchantWriteSignatureParams(
                     Protocol.newNonce(), clock.getAsLong());
 
-            var built = new LinkedHashMap<String, String>();
+            LinkedHashMap<String, String> built = new LinkedHashMap<String, String>();
             built.put("Content-Type", "application/json");
             built.put(Protocol.HEADER_CONTENT_ENCRYPTION, Protocol.CONTENT_ENCRYPTION);
             built.put(Protocol.HEADER_CONTENT_DIGEST, Protocol.contentDigestSha256(wireBody));
@@ -663,7 +694,7 @@ public final class Client {
     }
 
     private Map<String, Object> read(String path, Map<String, String> query) {
-        var encoded = new StringBuilder();
+        StringBuilder encoded = new StringBuilder();
         query.forEach((key, value) -> {
             if (value == null || value.trim().isEmpty()) {
                 throw new JoogopayException.Request("sdk: invalid query parameter: " + key);
@@ -679,10 +710,10 @@ public final class Client {
         Map<String, String> headers;
         try {
             Protocol.validateMerchantReadQuery(rawQuery);
-            var params = Protocol.newMerchantReadSignatureParams(
+            Protocol.SignatureParams params = Protocol.newMerchantReadSignatureParams(
                     Protocol.newNonce(), clock.getAsLong());
 
-            var built = new LinkedHashMap<String, String>();
+            LinkedHashMap<String, String> built = new LinkedHashMap<String, String>();
             built.put(Protocol.HEADER_MERCHANT_ACCESS_KEY, accessKey);
             built.put(Protocol.HEADER_SIGNATURE_INPUT, Protocol.signatureInputHeader(params));
             byte[] base = Protocol.signatureBase(params, "GET", path, rawQuery, built);
@@ -698,11 +729,12 @@ public final class Client {
     }
 
     private Map<String, Object> send(String url, String method, Map<String, String> headers, byte[] body) {
-        var all = new LinkedHashMap<>(headers);
+        if (closed.get()) throw new JoogopayException.Request("sdk: client is closed");
+        LinkedHashMap<String, String> all = new LinkedHashMap<>(headers);
         all.put("Accept", "application/json");
         all.put("Accept-Language", acceptLanguage);
         all.put("User-Agent", userAgent);
-        var response = transport.send(url, method, all, body);
+        Map.Entry<Integer, byte[]> response = transport.send(url, method, all, body);
         return decode(response.getKey(), response.getValue());
     }
 
@@ -720,29 +752,33 @@ public final class Client {
             throw new JoogopayException.Response(httpStatus, raw);
         }
         Object code = envelope.get("code");
-        int codeValue = code instanceof Number number ? number.intValue() : 0;
+        int codeValue = code instanceof Number ? ((Number) code).intValue() : 0;
         // HTTP 200 with a non-200 envelope code is still a business failure
         if (httpStatus != 200 || codeValue != 200) {
             Object data = envelope.get("data");
-            String message = data instanceof Map<?, ?> map && map.get("message") instanceof String s
-                    ? s : "";
+            String message = data instanceof Map<?, ?> && ((Map<?, ?>) data).get("message") instanceof String
+                    ? (String) ((Map<?, ?>) data).get("message") : "";
             throw new JoogopayException.Api(
                     httpStatus, codeValue,
-                    envelope.get("msg") instanceof String m ? m : "",
+                    envelope.get("msg") instanceof String ? (String) envelope.get("msg") : "",
                     message,
-                    envelope.get("traceId") instanceof String t ? t : "",
+                    envelope.get("traceId") instanceof String ? (String) envelope.get("traceId") : "",
                     raw);
         }
         // A success envelope always carries the business object; an empty map would
         // let a caller record an order that has no orderNo as successful.
-        if (!(envelope.get("data") instanceof Map<?, ?> data)) {
+        if (!(envelope.get("data") instanceof Map<?, ?>)) {
             throw new JoogopayException.Response(httpStatus, raw);
         }
-        return (Map<String, Object>) data;
+        return (Map<String, Object>) envelope.get("data");
     }
 
     private static String urlEncode(String value) {
-        return URLEncoder.encode(value, StandardCharsets.UTF_8);
+        try {
+            return URLEncoder.encode(value, "UTF-8");
+        } catch (java.io.UnsupportedEncodingException impossible) {
+            throw new AssertionError(impossible);
+        }
     }
 
     /** URLEncoder encodes a space as "+"; a path segment carries it as %20. */
@@ -750,39 +786,147 @@ public final class Client {
         return urlEncode(value).replace("+", "%20");
     }
 
-    private static final class HttpClientTransport implements Transport {
-        private final HttpClient httpClient;
-        private final Duration timeout;
+    static final class HttpClientTransport implements Transport, AutoCloseable {
+        private final int timeoutMillis;
+        private final int maxResponseBytes;
+        private final CloseableHttpClient client;
+        private final java.util.Set<HttpUriRequestBase> active = new java.util.HashSet<>();
+        private boolean closing;
+        private boolean terminated;
+        private IOException closeFailure;
 
-        HttpClientTransport(Duration timeout) {
-            this.timeout = timeout == null ? DEFAULT_TIMEOUT : timeout;
-            this.httpClient = HttpClient.newBuilder().connectTimeout(this.timeout).build();
+        HttpClientTransport(Duration timeout, int maxResponseBytes) {
+            this(timeout, maxResponseBytes, DEFAULT_MAX_CONNECTIONS);
+        }
+
+        HttpClientTransport(Duration timeout, int maxResponseBytes, int maxConnections) {
+            if (maxConnections <= 0) {
+                throw new JoogopayException.Config("sdk: maxConnections must be positive");
+            }
+            long millis;
+            try {
+                millis = (timeout == null ? DEFAULT_TIMEOUT : timeout).toMillis();
+            } catch (ArithmeticException e) {
+                throw new JoogopayException.Config("sdk: timeout is too large");
+            }
+            if (millis <= 0 || millis > Integer.MAX_VALUE) {
+                throw new JoogopayException.Config("sdk: timeout must be between 1 ms and 2147483647 ms");
+            }
+            this.timeoutMillis = (int) millis;
+            this.maxResponseBytes = maxResponseBytes;
+            Timeout limit = Timeout.ofMilliseconds(timeoutMillis);
+            RequestConfig config = RequestConfig.custom()
+                    .setConnectTimeout(limit).setConnectionRequestTimeout(limit).setResponseTimeout(limit)
+                    .setAuthenticationEnabled(false).build();
+            client = HttpClients.custom().useSystemProperties().setDefaultRequestConfig(config)
+                    .setConnectionManager(PoolingHttpClientConnectionManagerBuilder.create().useSystemProperties()
+                            .setMaxConnTotal(maxConnections).setMaxConnPerRoute(maxConnections).build())
+                    .disableAutomaticRetries().disableRedirectHandling().disableCookieManagement()
+                    .disableContentCompression().build();
         }
 
         @Override
         public Map.Entry<Integer, byte[]> send(
                 String url, String method, Map<String, String> headers, byte[] body) {
-            HttpRequest.Builder builder;
+            HttpUriRequestBase request;
             try {
-                builder = HttpRequest.newBuilder(URI.create(url)).timeout(timeout);
-                headers.forEach(builder::header);
-                builder.method(method, body == null
-                        ? HttpRequest.BodyPublishers.noBody()
-                        : HttpRequest.BodyPublishers.ofByteArray(body));
+                request = new HttpUriRequestBase(method, URI.create(url));
+                for (Map.Entry<String, String> header : headers.entrySet()) {
+                    if (header.getKey().indexOf('\r') >= 0 || header.getKey().indexOf('\n') >= 0
+                            || header.getValue().indexOf('\r') >= 0 || header.getValue().indexOf('\n') >= 0) {
+                        throw new IllegalArgumentException("invalid header");
+                    }
+                    request.setHeader(header.getKey(), header.getValue());
+                }
+                if (body != null) request.setEntity(new ByteArrayEntity(
+                        body, (ContentType) null));
             } catch (IllegalArgumentException e) {
-                // A malformed URL or header value is rejected before anything is sent.
                 throw new JoogopayException.Request("sdk: build http request: " + e.getMessage(), e);
             }
+            synchronized (active) {
+                if (closing) throw new JoogopayException.Request("sdk: client is closed");
+                active.add(request);
+            }
             try {
-                HttpResponse<byte[]> response =
-                        httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
-                return Map.entry(response.statusCode(), response.body());
+                return client.execute(request, response -> {
+                    if (response.getEntity() == null) return Collections8.entry(response.getCode(), new byte[0]);
+                    try (InputStream input = response.getEntity().getContent();
+                         ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+                        byte[] buffer = new byte[8192];
+                        int remaining = maxResponseBytes + 1;
+                        while (remaining > 0) {
+                            int count = input.read(buffer, 0, Math.min(buffer.length, remaining));
+                            if (count == -1) break;
+                            output.write(buffer, 0, count);
+                            remaining -= count;
+                            if (remaining == 0) {
+                                request.cancel();
+                                throw new JoogopayException.ResponseTooLarge("sdk: response body exceeds maxResponseBytes");
+                            }
+                        }
+                        return Collections8.entry(response.getCode(), output.toByteArray());
+                    }
+                });
             } catch (IOException e) {
-                // Connect failure, timeout or a broken read: the request may have reached the platform.
-                throw new JoogopayException.Transport("sdk: send request: " + e.getMessage(), e);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new JoogopayException.Transport("sdk: send request interrupted", e);
+                throw new JoogopayException.Transport("sdk: http request failed: " + e.getMessage(), e);
+            } finally {
+                synchronized (active) {
+                    active.remove(request);
+                    active.notifyAll();
+                }
+            }
+        }
+
+        @Override
+        public void close() {
+            java.util.List<HttpUriRequestBase> pending;
+            synchronized (active) {
+                if (closing) {
+                    awaitStopped(true);
+                    if (closeFailure != null) throw new JoogopayException.Transport("sdk: close failed", closeFailure);
+                    return;
+                }
+                closing = true;
+                pending = new java.util.ArrayList<>(active);
+            }
+            for (HttpUriRequestBase request : pending) request.cancel();
+            IOException failure = null;
+            try {
+                client.close();
+            } catch (IOException e) {
+                failure = e;
+            } finally {
+                synchronized (active) {
+                    closeFailure = failure;
+                    try {
+                        awaitStopped(false);
+                    } finally {
+                        terminated = true;
+                        active.notifyAll();
+                    }
+                }
+            }
+            if (closeFailure != null) throw new JoogopayException.Transport("sdk: close failed", closeFailure);
+        }
+
+        private void awaitStopped(boolean waitForCloser) {
+            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+            boolean interrupted = false;
+            try {
+                while (waitForCloser ? !terminated : !active.isEmpty()) {
+                    long remaining = deadline - System.nanoTime();
+                    if (remaining <= 0) {
+                        closeFailure = new IOException("active HTTP requests did not stop while closing");
+                        throw new JoogopayException.Transport("sdk: close failed", closeFailure);
+                    }
+                    try {
+                        java.util.concurrent.TimeUnit.NANOSECONDS.timedWait(active, remaining);
+                    } catch (InterruptedException e) {
+                        interrupted = true;
+                    }
+                }
+            } finally {
+                if (interrupted) Thread.currentThread().interrupt();
             }
         }
     }

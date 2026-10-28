@@ -12,112 +12,123 @@ final class Rules {
     private Rules() {}
 
     /** Top-level create-order field rules, from protocol/data/request-rules.json. */
-    static final List<String> CREATE_REQUIRED_TEXT_FIELDS = List.of("merchantOrderNo", "currency");
+    static final List<String> CREATE_REQUIRED_TEXT_FIELDS = Collections8.list("merchantOrderNo", "currency");
     static final String AMOUNT_PATTERN = "^(0|[1-9][0-9]{0,15})(\\.[0-9]{1,2})?$";
     static final String WEBHOOK_URL_PREFIX = "https://";
 
-    static final Map<String, String> METHOD_EXTRA_FIELDS = Map.ofEntries(
-            Map.entry("APPLE_PAY", "applePay"),
-            Map.entry("BANK_CARD", "bankCard"),
-            Map.entry("BANK_TRANSFER", "bankTransfer"),
-            Map.entry("BD_BKASH", "bdBkash"),
-            Map.entry("BD_NAGAD", "bdNagad"),
-            Map.entry("BREB", "breb"),
-            Map.entry("CASH", "cash"),
-            Map.entry("CASH_APP", "cashApp"),
-            Map.entry("CHIME", "chime"),
-            Map.entry("CREDIT_CARD", "creditCard"),
-            Map.entry("CVU", "cvu"),
-            Map.entry("E_WALLET", "eWallet"),
-            Map.entry("GOOGLE_PAY", "googlePay"),
-            Map.entry("ID_BANK_TRANSFER", "idBankTransfer"),
-            Map.entry("ID_DANA", "idDana"),
-            Map.entry("ID_GOPAY", "idGopay"),
-            Map.entry("ID_LINKAJA", "idLinkaja"),
-            Map.entry("ID_OVO", "idOvo"),
-            Map.entry("ID_QRIS", "idQris"),
-            Map.entry("ID_SHOPEEPAY", "idShopeepay"),
-            Map.entry("ID_VA", "idVa"),
-            Map.entry("IN_IFSC", "inIfsc"),
-            Map.entry("IN_UPI", "inUpi"),
-            Map.entry("KHIPU", "khipu"),
-            Map.entry("MACH", "mach"),
-            Map.entry("NEQUI", "nequi"),
-            Map.entry("NETELLER", "neteller"),
-            Map.entry("P2P", "p2p"),
-            Map.entry("PAGO46", "pago46"),
-            Map.entry("PAGO_FACIL", "pagoFacil"),
-            Map.entry("PAPARA", "papara"),
-            Map.entry("PAYPAL", "paypal"),
-            Map.entry("PH_DF_BANK", "phDfBank"),
-            Map.entry("PH_DF_WALLET", "phDfWallet"),
-            Map.entry("PH_GCASH", "phGcash"),
-            Map.entry("PH_GCASH_QR", "phGcashQr"),
-            Map.entry("PH_GRAB", "phGrab"),
-            Map.entry("PH_MAYA", "phMaya"),
-            Map.entry("PH_MAYA_QR", "phMayaQr"),
-            Map.entry("PH_NATIVE_GCASH", "phNativeGcash"),
-            Map.entry("PH_QRIS", "phQris"),
-            Map.entry("PIX", "pix"),
-            Map.entry("PK_BANK", "pkBank"),
-            Map.entry("PK_EASYPAISA", "pkEasypaisa"),
-            Map.entry("PK_EASYPAISA_QRPH", "pkEasypaisaQrph"),
-            Map.entry("PK_JAZZCASH", "pkJazzcash"),
-            Map.entry("PK_JAZZCASH_QRPH", "pkJazzcashQrph"),
-            Map.entry("PSE", "pse"),
-            Map.entry("QRIS", "qris"),
-            Map.entry("RAPIPAGO", "rapipago"),
-            Map.entry("SBP", "sbp"),
-            Map.entry("SERVIFACIL", "serviFacil"),
-            Map.entry("SKRILL", "skrill"),
-            Map.entry("SPEI", "spei"),
-            Map.entry("TH_BANK_CARD", "thBankCard"),
-            Map.entry("TH_BANK_TRANSFER", "thBankTransfer"),
-            Map.entry("TH_PROMPTPAY", "thPromptpay"),
-            Map.entry("TH_TRUEMONEY", "thTruemoney"),
-            Map.entry("TRANSFIYA", "transfiya"),
-            Map.entry("USDT-BEP20", "usdtBep20"),
-            Map.entry("USDT-ERC20", "usdtErc20"),
-            Map.entry("USDT-TRC20", "usdtTrc20"),
-            Map.entry("WEBPAY", "webpay")
+    static final Map<String, String> METHOD_EXTRA_FIELDS = Collections8.mapEntries(
+            Collections8.entry("APPLE_PAY", "applePay"),
+            Collections8.entry("BANK_CARD", "bankCard"),
+            Collections8.entry("BANK_TRANSFER", "bankTransfer"),
+            Collections8.entry("BD_BKASH", "bdBkash"),
+            Collections8.entry("BD_NAGAD", "bdNagad"),
+            Collections8.entry("BREB", "breb"),
+            Collections8.entry("CASH", "cash"),
+            Collections8.entry("CASH_APP", "cashApp"),
+            Collections8.entry("CHIME", "chime"),
+            Collections8.entry("CREDIT_CARD", "creditCard"),
+            Collections8.entry("CVU", "cvu"),
+            Collections8.entry("E_WALLET", "eWallet"),
+            Collections8.entry("GOOGLE_PAY", "googlePay"),
+            Collections8.entry("ID_BANK_TRANSFER", "idBankTransfer"),
+            Collections8.entry("ID_DANA", "idDana"),
+            Collections8.entry("ID_GOPAY", "idGopay"),
+            Collections8.entry("ID_LINKAJA", "idLinkaja"),
+            Collections8.entry("ID_OVO", "idOvo"),
+            Collections8.entry("ID_QRIS", "idQris"),
+            Collections8.entry("ID_SHOPEEPAY", "idShopeepay"),
+            Collections8.entry("ID_VA", "idVa"),
+            Collections8.entry("IN_IFSC", "inIfsc"),
+            Collections8.entry("IN_UPI", "inUpi"),
+            Collections8.entry("KHIPU", "khipu"),
+            Collections8.entry("MACH", "mach"),
+            Collections8.entry("NEQUI", "nequi"),
+            Collections8.entry("NETELLER", "neteller"),
+            Collections8.entry("P2P", "p2p"),
+            Collections8.entry("PAGO46", "pago46"),
+            Collections8.entry("PAGO_FACIL", "pagoFacil"),
+            Collections8.entry("PAPARA", "papara"),
+            Collections8.entry("PAYPAL", "paypal"),
+            Collections8.entry("PH_DF_BANK", "phDfBank"),
+            Collections8.entry("PH_DF_WALLET", "phDfWallet"),
+            Collections8.entry("PH_GCASH", "phGcash"),
+            Collections8.entry("PH_GCASH_QR", "phGcashQr"),
+            Collections8.entry("PH_GRAB", "phGrab"),
+            Collections8.entry("PH_MAYA", "phMaya"),
+            Collections8.entry("PH_MAYA_QR", "phMayaQr"),
+            Collections8.entry("PH_NATIVE_GCASH", "phNativeGcash"),
+            Collections8.entry("PH_QRIS", "phQris"),
+            Collections8.entry("PIX", "pix"),
+            Collections8.entry("PK_BANK", "pkBank"),
+            Collections8.entry("PK_EASYPAISA", "pkEasypaisa"),
+            Collections8.entry("PK_EASYPAISA_QRPH", "pkEasypaisaQrph"),
+            Collections8.entry("PK_JAZZCASH", "pkJazzcash"),
+            Collections8.entry("PK_JAZZCASH_QRPH", "pkJazzcashQrph"),
+            Collections8.entry("PSE", "pse"),
+            Collections8.entry("QRIS", "qris"),
+            Collections8.entry("RAPIPAGO", "rapipago"),
+            Collections8.entry("SBP", "sbp"),
+            Collections8.entry("SERVIFACIL", "serviFacil"),
+            Collections8.entry("SKRILL", "skrill"),
+            Collections8.entry("SPEI", "spei"),
+            Collections8.entry("TH_BANK_CARD", "thBankCard"),
+            Collections8.entry("TH_BANK_TRANSFER", "thBankTransfer"),
+            Collections8.entry("TH_PROMPTPAY", "thPromptpay"),
+            Collections8.entry("TH_TRUEMONEY", "thTruemoney"),
+            Collections8.entry("TRANSFIYA", "transfiya"),
+            Collections8.entry("USDT-BEP20", "usdtBep20"),
+            Collections8.entry("USDT-ERC20", "usdtErc20"),
+            Collections8.entry("USDT-TRC20", "usdtTrc20"),
+            Collections8.entry("WEBPAY", "webpay")
     );
 
-    record Rule(List<String> codes, List<String> required, Map<String, List<String>> byMethod, List<String> allowEmpty, Map<String, List<String>> optionalNullableStringsByMethod) {
+    static final class Rule {
+        private final List<String> codes, required, allowEmpty;
+        private final Map<String, List<String>> byMethod, optionalNullableStringsByMethod;
+        Rule(List<String> codes, List<String> required, Map<String, List<String>> byMethod, List<String> allowEmpty, Map<String, List<String>> optionalNullableStringsByMethod) {
+            this.codes = codes; this.required = required; this.byMethod = byMethod;
+            this.allowEmpty = allowEmpty; this.optionalNullableStringsByMethod = optionalNullableStringsByMethod;
+        }
+        List<String> codes() { return codes; }
+        List<String> required() { return required; }
+        List<String> allowEmpty() { return allowEmpty; }
+        Map<String, List<String>> byMethod() { return byMethod; }
+        Map<String, List<String>> optionalNullableStringsByMethod() { return optionalNullableStringsByMethod; }
         Rule(List<String> codes, List<String> required, Map<String, List<String>> byMethod) {
-            this(codes, required, byMethod, List.of(), Map.of());
+            this(codes, required, byMethod, Collections8.list(), Collections8.map());
         }
     }
 
-    static final Map<String, Rule> PAYMENT_METHOD_RULES = Map.ofEntries(
-            Map.entry("ARS", new Rule(List.of("BANK_TRANSFER", "CVU", "QRIS"), List.of("documentNumber", "documentType", "email", "firstName", "lastName"), Map.ofEntries(Map.entry("CVU", List.of("phone")), Map.entry("QRIS", List.of("phone"))))),
-            Map.entry("BDT", new Rule(List.of("BD_BKASH", "BD_NAGAD"), List.of("accountName", "email", "mobile"), Map.of())),
-            Map.entry("BRL", new Rule(List.of("PIX"), List.of(), Map.of())),
-            Map.entry("CLP", new Rule(List.of("KHIPU", "MACH", "PAGO46", "WEBPAY"), List.of("customerEmail", "customerName", "documentNumber", "documentType"), Map.of())),
-            Map.entry("COP", new Rule(List.of("BREB", "NEQUI", "PSE"), List.of(), Map.ofEntries(Map.entry("BREB", List.of("customerEmail", "customerName", "customerPhone", "documentNumber", "documentType"))))),
-            Map.entry("IDR", new Rule(List.of("ID_DANA", "ID_GOPAY", "ID_LINKAJA", "ID_OVO", "ID_QRIS", "ID_SHOPEEPAY", "ID_VA"), List.of("accountName", "bankCode", "email", "mobile"), Map.of())),
-            Map.entry("INR", new Rule(List.of("IN_UPI"), List.of("accountName", "email", "mobile"), Map.of())),
-            Map.entry("MXN", new Rule(List.of("CASH", "OXXO", "SPEI"), List.of(), Map.of())),
-            Map.entry("PEN", new Rule(List.of("BANK_TRANSFER", "CASH", "E_WALLET"), List.of("customerEmail", "customerName", "customerPhone", "documentNumber", "documentType"), Map.of())),
-            Map.entry("PHP", new Rule(List.of("PH_GCASH", "PH_GCASH_QR", "PH_GRAB", "PH_MAYA", "PH_MAYA_QR", "PH_NATIVE_GCASH", "PH_QRIS"), List.of(), Map.of())),
-            Map.entry("PKR", new Rule(List.of("PK_EASYPAISA", "PK_EASYPAISA_QRPH", "PK_JAZZCASH", "PK_JAZZCASH_QRPH"), List.of(), Map.of())),
-            Map.entry("TRY", new Rule(List.of("BANK_TRANSFER"), List.of("customerName"), Map.of())),
-            Map.entry("USD", new Rule(List.of("CASH_APP"), List.of("name", "phone", "email", "ipAddress"), Map.of()))
+    static final Map<String, Rule> PAYMENT_METHOD_RULES = Collections8.mapEntries(
+            Collections8.entry("ARS", new Rule(Collections8.list("BANK_TRANSFER", "CVU", "QRIS"), Collections8.list("documentNumber", "documentType", "email", "firstName", "lastName"), Collections8.mapEntries(Collections8.entry("CVU", Collections8.list("phone")), Collections8.entry("QRIS", Collections8.list("phone"))))),
+            Collections8.entry("BDT", new Rule(Collections8.list("BD_BKASH", "BD_NAGAD"), Collections8.list("accountName", "email", "mobile"), Collections8.map())),
+            Collections8.entry("BRL", new Rule(Collections8.list("PIX"), Collections8.list(), Collections8.map())),
+            Collections8.entry("CLP", new Rule(Collections8.list("KHIPU", "MACH", "PAGO46", "WEBPAY"), Collections8.list("customerEmail", "customerName", "documentNumber", "documentType"), Collections8.map())),
+            Collections8.entry("COP", new Rule(Collections8.list("BREB", "NEQUI", "PSE"), Collections8.list(), Collections8.mapEntries(Collections8.entry("BREB", Collections8.list("customerEmail", "customerName", "customerPhone", "documentNumber", "documentType"))))),
+            Collections8.entry("IDR", new Rule(Collections8.list("ID_DANA", "ID_GOPAY", "ID_LINKAJA", "ID_OVO", "ID_QRIS", "ID_SHOPEEPAY", "ID_VA"), Collections8.list("accountName", "bankCode", "email", "mobile"), Collections8.map())),
+            Collections8.entry("INR", new Rule(Collections8.list("IN_UPI"), Collections8.list("accountName", "email", "mobile"), Collections8.map())),
+            Collections8.entry("MXN", new Rule(Collections8.list("CASH", "OXXO", "SPEI"), Collections8.list(), Collections8.map())),
+            Collections8.entry("PEN", new Rule(Collections8.list("BANK_TRANSFER", "CASH", "E_WALLET"), Collections8.list("customerEmail", "customerName", "customerPhone", "documentNumber", "documentType"), Collections8.map())),
+            Collections8.entry("PHP", new Rule(Collections8.list("PH_GCASH", "PH_GCASH_QR", "PH_GRAB", "PH_MAYA", "PH_MAYA_QR", "PH_NATIVE_GCASH", "PH_QRIS"), Collections8.list(), Collections8.map())),
+            Collections8.entry("PKR", new Rule(Collections8.list("PK_EASYPAISA", "PK_EASYPAISA_QRPH", "PK_JAZZCASH", "PK_JAZZCASH_QRPH"), Collections8.list(), Collections8.map())),
+            Collections8.entry("TRY", new Rule(Collections8.list("BANK_TRANSFER"), Collections8.list("customerName"), Collections8.map())),
+            Collections8.entry("USD", new Rule(Collections8.list("CASH_APP"), Collections8.list("name", "phone", "email", "ipAddress"), Collections8.map()))
     );
 
-    static final Map<String, Rule> PAYOUT_METHOD_RULES = Map.ofEntries(
-            Map.entry("ARS", new Rule(List.of("BANK_TRANSFER"), List.of("accountNo", "accountType", "documentNumber", "documentType", "email", "firstName", "lastName", "phone"), Map.of(), List.of(), Map.ofEntries(Map.entry("BANK_TRANSFER", List.of("address"))))),
-            Map.entry("BDT", new Rule(List.of("BD_BKASH", "BD_NAGAD"), List.of("accountName", "accountNo", "email", "mobile"), Map.of())),
-            Map.entry("BRL", new Rule(List.of("PIX"), List.of("key", "keyType"), Map.of())),
-            Map.entry("CLP", new Rule(List.of("BANK_TRANSFER"), List.of("accountName", "accountNo", "accountType", "bankCode", "customerEmail", "customerPhone", "documentNumber", "documentType"), Map.of())),
-            Map.entry("COP", new Rule(List.of("BANK_CARD", "BANK_TRANSFER", "BREB", "TRANSFIYA"), List.of("customerEmail", "customerName", "customerPhone", "documentNumber", "documentType"), Map.ofEntries(Map.entry("BANK_CARD", List.of("accountNo", "bankName")), Map.entry("BANK_TRANSFER", List.of("accountNo", "bankName")), Map.entry("BREB", List.of("accountNo"))))),
-            Map.entry("IDR", new Rule(List.of("ID_BANK_TRANSFER", "ID_DANA", "ID_GOPAY", "ID_LINKAJA", "ID_OVO", "ID_SHOPEEPAY"), List.of("accountName", "accountNo", "bankCode", "email", "mobile"), Map.of())),
-            Map.entry("INR", new Rule(List.of("IN_IFSC", "IN_UPI"), List.of("email", "mobile", "name"), Map.ofEntries(Map.entry("IN_IFSC", List.of("account", "ifsc"))))),
-            Map.entry("MXN", new Rule(List.of("BANK_TRANSFER"), List.of("accountName", "accountNo", "accountType", "bankCode", "bankName"), Map.of())),
-            Map.entry("PEN", new Rule(List.of("BANK_TRANSFER", "E_WALLET"), List.of("accountName", "accountNo", "bankCode", "customerEmail", "customerPhone", "documentNumber", "documentType"), Map.ofEntries(Map.entry("BANK_TRANSFER", List.of("accountType", "cciNo"))))),
-            Map.entry("PHP", new Rule(List.of("PH_DF_BANK", "PH_DF_WALLET", "PH_GCASH", "PH_MAYA"), List.of("accountName", "accountNo", "email", "mobile"), Map.ofEntries(Map.entry("PH_DF_BANK", List.of("bankCode")), Map.entry("PH_DF_WALLET", List.of("bankCode"))))),
-            Map.entry("PKR", new Rule(List.of("PK_BANK", "PK_EASYPAISA", "PK_JAZZCASH"), List.of("accountNo", "cnic", "mobile"), Map.ofEntries(Map.entry("PK_BANK", List.of("bankCode"))))),
-            Map.entry("TRY", new Rule(List.of("BANK_TRANSFER", "PAPARA"), List.of("accountName", "accountNo"), Map.ofEntries(Map.entry("BANK_TRANSFER", List.of("bankCode", "bankName"))))),
-            Map.entry("USD", new Rule(List.of("CASH_APP", "PAYPAL", "CHIME"), List.of("name", "phone", "email", "accountNo", "firstName", "lastName", "dateOfBirth", "countryOfResidence", "stateOfResidence", "cardCity", "cardStreet", "cardPostCode"), Map.of()))
+    static final Map<String, Rule> PAYOUT_METHOD_RULES = Collections8.mapEntries(
+            Collections8.entry("ARS", new Rule(Collections8.list("BANK_TRANSFER"), Collections8.list("accountNo", "accountType", "documentNumber", "documentType", "email", "firstName", "lastName", "phone"), Collections8.map(), Collections8.list(), Collections8.mapEntries(Collections8.entry("BANK_TRANSFER", Collections8.list("address"))))),
+            Collections8.entry("BDT", new Rule(Collections8.list("BD_BKASH", "BD_NAGAD"), Collections8.list("accountName", "accountNo", "email", "mobile"), Collections8.map())),
+            Collections8.entry("BRL", new Rule(Collections8.list("PIX"), Collections8.list("key", "keyType"), Collections8.map())),
+            Collections8.entry("CLP", new Rule(Collections8.list("BANK_TRANSFER"), Collections8.list("accountName", "accountNo", "accountType", "bankCode", "customerEmail", "customerPhone", "documentNumber", "documentType"), Collections8.map())),
+            Collections8.entry("COP", new Rule(Collections8.list("BANK_CARD", "BANK_TRANSFER", "BREB", "TRANSFIYA"), Collections8.list("customerEmail", "customerName", "customerPhone", "documentNumber", "documentType"), Collections8.mapEntries(Collections8.entry("BANK_CARD", Collections8.list("accountNo", "bankName")), Collections8.entry("BANK_TRANSFER", Collections8.list("accountNo", "bankName")), Collections8.entry("BREB", Collections8.list("accountNo"))))),
+            Collections8.entry("IDR", new Rule(Collections8.list("ID_BANK_TRANSFER", "ID_DANA", "ID_GOPAY", "ID_LINKAJA", "ID_OVO", "ID_SHOPEEPAY"), Collections8.list("accountName", "accountNo", "bankCode", "email", "mobile"), Collections8.map())),
+            Collections8.entry("INR", new Rule(Collections8.list("IN_IFSC", "IN_UPI"), Collections8.list("email", "mobile", "name"), Collections8.mapEntries(Collections8.entry("IN_IFSC", Collections8.list("account", "ifsc"))))),
+            Collections8.entry("MXN", new Rule(Collections8.list("BANK_TRANSFER"), Collections8.list("accountName", "accountNo", "accountType", "bankCode", "bankName"), Collections8.map())),
+            Collections8.entry("PEN", new Rule(Collections8.list("BANK_TRANSFER", "E_WALLET"), Collections8.list("accountName", "accountNo", "bankCode", "customerEmail", "customerPhone", "documentNumber", "documentType"), Collections8.mapEntries(Collections8.entry("BANK_TRANSFER", Collections8.list("accountType", "cciNo"))))),
+            Collections8.entry("PHP", new Rule(Collections8.list("PH_DF_BANK", "PH_DF_WALLET", "PH_GCASH", "PH_MAYA"), Collections8.list("accountName", "accountNo", "email", "mobile"), Collections8.mapEntries(Collections8.entry("PH_DF_BANK", Collections8.list("bankCode")), Collections8.entry("PH_DF_WALLET", Collections8.list("bankCode"))))),
+            Collections8.entry("PKR", new Rule(Collections8.list("PK_BANK", "PK_EASYPAISA", "PK_JAZZCASH"), Collections8.list("accountNo", "cnic", "mobile"), Collections8.mapEntries(Collections8.entry("PK_BANK", Collections8.list("bankCode"))))),
+            Collections8.entry("TRY", new Rule(Collections8.list("BANK_TRANSFER", "PAPARA"), Collections8.list("accountName", "accountNo"), Collections8.mapEntries(Collections8.entry("BANK_TRANSFER", Collections8.list("bankCode", "bankName"))))),
+            Collections8.entry("USD", new Rule(Collections8.list("CASH_APP", "PAYPAL", "CHIME"), Collections8.list("name", "phone", "email", "accountNo", "firstName", "lastName", "dateOfBirth", "countryOfResidence", "stateOfResidence", "cardCity", "cardStreet", "cardPostCode"), Collections8.map()))
     );
 
 }

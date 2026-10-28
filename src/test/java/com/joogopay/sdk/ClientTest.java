@@ -35,7 +35,7 @@ import org.junit.jupiter.api.Test;
  */
 class ClientTest {
 
-    private static final Path TESTDATA = Path.of("protocol", "testdata");
+    private static final Path TESTDATA = java.nio.file.Paths.get("protocol", "testdata");
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final Base64.Decoder B64 = Base64.getDecoder();
 
@@ -46,7 +46,7 @@ class ClientTest {
     private static final class Captured {
         String url;
         String method;
-        Map<String, String> headers = Map.of();
+        Map<String, String> headers = Collections8.map();
         byte[] body;
     }
 
@@ -57,7 +57,7 @@ class ClientTest {
             captured.headers = new HashMap<>();
             headers.forEach((k, v) -> captured.headers.put(k.toLowerCase(Locale.ROOT), v));
             captured.body = body;
-            return Map.entry(status, responseBody);
+            return Collections8.entry(status, responseBody);
         };
     }
 
@@ -71,7 +71,7 @@ class ClientTest {
                 .merchantPrivateKeyBase64(sig.get("key").get("merchantPrivateKeyBase64").asText())
                 .platformBodyKeyId(body.get("keyId").asText())
                 .platformBodyPublicKeyBase64(body.get("platformBodyPublicKeyBase64").asText())
-                .platformWebhookPublicKeys(Map.of(
+                .platformWebhookPublicKeys(Collections8.map(
                         hook.get("key").get("platformWebhookKeyId").asText(),
                         hook.get("key").get("platformWebhookPublicKeyBase64").asText()));
     }
@@ -95,11 +95,11 @@ class ClientTest {
      */
     @Test
     void malformedIdempotencyKeyIsRequestAndNothingIsSent() throws IOException {
-        var captured = new Captured();
+        Captured captured = new Captured();
         Client client = baseBuilder().transport(transport(captured, 200, new byte[0])).build();
-        assertThrows(JoogopayException.Request.class, () -> client.createPayment(Map.of(
+        assertThrows(JoogopayException.Request.class, () -> client.createPayment(Collections8.map(
                 "merchantOrderNo", "M1", "currency", "BRL", "amount", "1.00",
-                "paymentMethod", Map.of("code", "PIX", "pix", Map.of("payerName", "X")),
+                "paymentMethod", Collections8.map("code", "PIX", "pix", Collections8.map("payerName", "X")),
                 "webhookUrl", "https://m.example.com/w"), "my-key-123"));
         assertNull(captured.url, "nothing reached the server");
     }
@@ -107,20 +107,20 @@ class ClientTest {
     @Test
     void createPaymentWireShapeAndServerSideDecrypt() throws IOException {
         JsonNode bodyVector = load("bodycrypt/001-sealed-box.json");
-        var captured = new Captured();
+        Captured captured = new Captured();
         Client client = baseBuilder()
                 .transport(transport(captured, 200, envelopeJson(
                         "{\"orderNo\":\"ORD001\",\"status\":\"PENDING\",\"amount\":\"100.00\"}")))
                 .build();
 
-        var request = new LinkedHashMap<String, Object>();
+        HashMap<String, Object> request = new LinkedHashMap<String, Object>();
         request.put("merchantOrderNo", "M202608270001");
         request.put("currency", "BRL");
         request.put("amount", "100.00");
-        request.put("paymentMethod", Map.of("code", "PIX"));
+        request.put("paymentMethod", Collections8.map("code", "PIX"));
         request.put("webhookUrl", "https://merchant.example.com/webhook/payments");
 
-        var order = client.createPayment(request);
+        Map<String, Object> order = client.createPayment(request);
         assertEquals("ORD001", order.get("orderNo"));
         assertEquals("100.00", order.get("amount"), "amount is a decimal string");
 
@@ -137,12 +137,12 @@ class ClientTest {
 
         assertEquals(Protocol.contentDigestSha256(captured.body),
                 captured.headers.get("content-digest"), "digest covers the envelope");
-        var envelope = Protocol.decodeBodyEnvelope(captured.body);
+        Protocol.BodyEnvelope envelope = Protocol.decodeBodyEnvelope(captured.body);
         assertEquals(Protocol.CONTENT_ENCRYPTION, envelope.alg());
         assertEquals(bodyVector.get("keyId").asText(), envelope.keyId());
 
         // the platform private key opens the merchant's original JSON
-        var opened = Protocol.openBodyEnvelope(
+        Map.Entry<byte[], String> opened = Protocol.openBodyEnvelope(
                 captured.body,
                 B64.decode(bodyVector.get("platformBodyPublicKeyBase64").asText()),
                 B64.decode(bodyVector.get("platformBodyPrivateKeyBase64").asText()));
@@ -153,15 +153,15 @@ class ClientTest {
 
     @Test
     void idempotencyKeyIsReusable() throws IOException {
-        var captured = new Captured();
+        Captured captured = new Captured();
         Client client = baseBuilder()
                 .transport(transport(captured, 200, envelopeJson("{}")))
                 .build();
         String key = Protocol.newNonce();
-        Map<String, Object> request = Map.of(
+        Map<String, Object> request = Collections8.map(
                 "merchantOrderNo", "M1", "currency", "BRL", "amount", "1.00",
-                "payoutMethod", Map.of("code", "PIX",
-                        "pix", Map.of("keyType", "CPF", "key", "12345678901")),
+                "payoutMethod", Collections8.map("code", "PIX",
+                        "pix", Collections8.map("keyType", "CPF", "key", "12345678901")),
                 "webhookUrl", "https://m.example.com/w");
 
         client.createPayout(request, key);
@@ -173,7 +173,7 @@ class ClientTest {
 
     @Test
     void readWireShape() throws IOException {
-        var captured = new Captured();
+        Captured captured = new Captured();
         Client client = baseBuilder()
                 .transport(transport(captured, 200, envelopeJson("{\"orderNo\":\"ORD001\"}")))
                 .build();
@@ -182,7 +182,7 @@ class ClientTest {
         assertEquals("GET", captured.method);
         assertEquals("https://api.example.com/api/v1/payments?orderNo=P202608270001", captured.url);
         assertEquals(null, captured.body, "GET has no body");
-        for (String absent : List.of("content-type", "content-encryption", "content-digest",
+        for (String absent : Collections8.list("content-type", "content-encryption", "content-digest",
                 "idempotency-key")) {
             assertFalse(captured.headers.containsKey(absent), "GET must not send " + absent);
         }
@@ -200,7 +200,7 @@ class ClientTest {
 
     @Test
     void balanceAndRateUseTargetPaths() throws IOException {
-        var captured = new Captured();
+        Captured captured = new Captured();
         Client client = baseBuilder()
                 .transport(transport(captured, 200, envelopeJson("{\"usdRate\":\"5.40\"}")))
                 .build();
@@ -208,14 +208,14 @@ class ClientTest {
         client.getBalance("BRL");
         assertTrue(captured.url.contains("/api/v1/balances?"), "not the legacy /merchant/balance");
 
-        var rate = client.getUsdRate("BRL", "PIX");
+        Map<String, Object> rate = client.getUsdRate("BRL", "PIX");
         assertTrue(captured.url.contains("/api/v1/usd-rates?"), "not the legacy /payment/usdRate");
         assertEquals("5.40", rate.get("usdRate"));
     }
 
     @Test
     void receiptEscapesPathAndHasNoQuery() throws IOException {
-        var captured = new Captured();
+        Captured captured = new Captured();
         Client client = baseBuilder()
                 .transport(transport(captured, 200, envelopeJson("{\"amount\":\"100.00\"}")))
                 .build();
@@ -239,10 +239,10 @@ class ClientTest {
                 .transport(transport(new Captured(), v.get("httpStatus").asInt(),
                         MAPPER.writeValueAsBytes(v.get("body"))))
                 .build();
-        var order = client.queryPaymentByOrderNo("ORD202605190001");
+        Map<String, Object> order = client.queryPaymentByOrderNo("ORD202605190001");
         assertEquals("ORD202605190001", order.get("orderNo"));
         assertEquals(Status.SUCCEEDED, order.get("status"));
-        assertEquals(Map.of("name", "Maria Silva", "documentNumber", "01234567890"), order.get("payer"));
+        assertEquals(Collections8.map("name", "Maria Silva", "documentNumber", "01234567890"), order.get("payer"));
     }
 
     @Test
@@ -252,7 +252,7 @@ class ClientTest {
                 .transport(transport(new Captured(), v.get("httpStatus").asInt(),
                         MAPPER.writeValueAsBytes(v.get("body"))))
                 .build();
-        var error = assertThrows(JoogopayException.Api.class,
+        JoogopayException.Api error = assertThrows(JoogopayException.Api.class,
                 () -> client.queryPaymentByOrderNo("missing"));
         JsonNode want = v.get("expectedFields");
         assertEquals(want.get("HTTPStatus").asInt(), error.httpStatus);
@@ -269,7 +269,7 @@ class ClientTest {
                 .transport(transport(new Captured(), v.get("httpStatus").asInt(),
                         MAPPER.writeValueAsBytes(v.get("body"))))
                 .build();
-        var error = assertThrows(JoogopayException.Api.class,
+        JoogopayException.Api error = assertThrows(JoogopayException.Api.class,
                 () -> client.queryPaymentByOrderNo("drift"));
         assertEquals(200, error.httpStatus);
         assertEquals(12100099, error.code);
@@ -283,7 +283,7 @@ class ClientTest {
         Client client = baseBuilder()
                 .transport(transport(new Captured(), v.get("httpStatus").asInt(), html))
                 .build();
-        var error = assertThrows(JoogopayException.Response.class,
+        JoogopayException.Response error = assertThrows(JoogopayException.Response.class,
                 () -> client.queryPaymentByOrderNo("boom"));
         assertEquals(v.get("expectedFields").get("HTTPStatus").asInt(), error.httpStatus);
     }
@@ -300,8 +300,8 @@ class ClientTest {
 
     @Test
     void responseVectorAmountsAreDecimalStrings() throws IOException {
-        try (var paths = Files.list(TESTDATA.resolve("responses"))) {
-            for (Path path : paths.filter(p -> p.toString().endsWith(".json")).toList()) {
+        try (java.util.stream.Stream<Path> paths = Files.list(TESTDATA.resolve("responses"))) {
+            for (Path path : paths.filter(p -> p.toString().endsWith(".json")).collect(java.util.stream.Collectors.toList())) {
                 JsonNode data = MAPPER.readTree(Files.readAllBytes(path)).path("body").path("data");
                 if (!data.isObject()) {
                     continue;
@@ -319,7 +319,7 @@ class ClientTest {
     }
 
     private Map<String, String> hookHeaders(JsonNode hook) {
-        var headers = new HashMap<String, String>();
+        Map<String, String> headers = new HashMap<String, String>();
         hook.get("headers").fields()
                 .forEachRemaining(e -> headers.put(e.getKey(), e.getValue().asText()));
         return headers;
@@ -332,8 +332,8 @@ class ClientTest {
                 .clock(() -> 1787803300L)
                 .transport(transport(new Captured(), 200, envelopeJson("{}")))
                 .build();
-        var input = hook.get("input");
-        var payload = client.parsePaymentWebhook(input.get("method").asText(),
+        JsonNode input = hook.get("input");
+        Map<String, Object> payload = client.parsePaymentWebhook(input.get("method").asText(),
                 input.get("path").asText(), hookHeaders(hook),
                 hook.get("body").asText().getBytes(StandardCharsets.UTF_8),
                 input.get("rawQuery").asText());
@@ -350,19 +350,106 @@ class ClientTest {
         JsonNode hook = load("webhook/002-payment-payer.json");
         Client client = baseBuilder()
                 .clock(() -> 1787803300L)
-                .platformWebhookPublicKeys(Map.of(
+                .platformWebhookPublicKeys(Collections8.map(
                         hook.get("key").get("platformWebhookKeyId").asText(),
                         hook.get("key").get("platformWebhookPublicKeyBase64").asText()))
                 .transport(transport(new Captured(), 200, envelopeJson("{}")))
                 .build();
-        var input = hook.get("input");
-        var payload = client.parsePaymentWebhook(input.get("method").asText(),
+        JsonNode input = hook.get("input");
+        Map<String, Object> payload = client.parsePaymentWebhook(input.get("method").asText(),
                 input.get("path").asText(), hookHeaders(hook),
                 hook.get("body").asText().getBytes(StandardCharsets.UTF_8),
                 input.get("rawQuery").asText());
-        assertEquals(Map.of("name", "Maria Silva", "documentNumber", "01234567890"), payload.get("payer"));
+        assertEquals(Collections8.map("name", "Maria Silva", "documentNumber", "01234567890"), payload.get("payer"));
         assertEquals("100.50", payload.get("amount"));
         assertEquals("100.50", payload.get("paidAmount"));
+    }
+
+    @Test
+    void parsePayoutWebhookReceiverAndSender() throws IOException {
+        JsonNode hook = load("webhook/001-payment-succeeded.json");
+        JsonNode key = load("signature/001-read-query.json").get("key");
+        Client client = baseBuilder()
+                .clock(() -> 1787803300L)
+                .platformWebhookPublicKeys(Collections8.map(
+                        hook.get("key").get("platformWebhookKeyId").asText(),
+                        key.get("merchantPublicKeyBase64").asText()))
+                .transport(transport(new Captured(), 200, envelopeJson("{}")))
+                .build();
+        for (String receiverJson : Collections8.list(
+                "", "null", "{}", "{\"name\":\"João Silva\"}",
+                "{\"documentNumber\":\"01234567890\"}",
+                "{\"name\":\"Maria Silva\",\"documentType\":\"CPF\",\"documentNumber\":\"01234567890\","
+                        + "\"keyType\":\"PIX\",\"key\":\"pix-key\",\"bankCode\":\"00000000\",\"bankName\":\"Banco do Brasil\"}")) {
+            com.fasterxml.jackson.databind.node.ObjectNode payload = MAPPER.createObjectNode();
+            payload.put("eventId", hook.get("headers").get("Webhook-Event-Id").asText());
+            payload.put("orderType", "PAYOUT");
+            payload.put("orderNo", "PO1");
+            payload.put("merchantOrderNo", "M1");
+            payload.put("status", "SUCCEEDED");
+            payload.put("currency", "BRL");
+            payload.put("amount", "10.00");
+            payload.put("channelTradeNo", "E2E1");
+            if (!receiverJson.isEmpty()) {
+                payload.set("receiver", MAPPER.readTree(receiverJson));
+            }
+            Map<String, String> sender = receiverJson.contains("bankCode") ? Collections8.map(
+                    "name", "Sender Company", "documentType", "CNPJ", "documentNumber", "01234567000189",
+                    "bankCode", "00000000", "bankName", "Source Bank", "bankBranch", "0001",
+                    "accountNumber", "000123", "accountSuffix", "9") : null;
+            if (sender != null) {
+                payload.set("sender", MAPPER.valueToTree(sender));
+            }
+            byte[] body = MAPPER.writeValueAsBytes(payload);
+            Map<String, String> headers = hookHeaders(hook);
+            headers.put("Content-Digest", Protocol.contentDigestSha256(body));
+            Protocol.SignatureParams params = Protocol.parsePlatformSignatureInput(headers.get("Signature-Input"));
+            headers.put("Signature", Protocol.signEd25519(
+                    B64.decode(key.get("merchantPrivateKeyBase64").asText()), Protocol.SIGNATURE_LABEL_PLATFORM,
+                    Protocol.signatureBase(params, "POST", "/webhook/payouts", "", headers)));
+            Map<String, Object> parsed = client.parsePayoutWebhook("POST", "/webhook/payouts", headers, body);
+            assertEquals(!receiverJson.isEmpty(), parsed.containsKey("receiver"), receiverJson);
+            assertEquals(receiverJson.isEmpty() ? null : MAPPER.readValue(receiverJson, Object.class),
+                    parsed.get("receiver"), receiverJson);
+            assertEquals("10.00", parsed.get("amount"));
+            assertEquals("SUCCEEDED", parsed.get("status"));
+            assertEquals("E2E1", parsed.get("channelTradeNo"));
+            assertEquals(sender, parsed.get("sender"));
+
+            if (sender != null) {
+                com.fasterxml.jackson.databind.node.ObjectNode altered = payload.deepCopy();
+                ((com.fasterxml.jackson.databind.node.ObjectNode) altered.get("sender"))
+                        .put("accountNumber", "999123");
+                byte[] tampered = MAPPER.writeValueAsBytes(altered);
+                for (boolean refreshDigest : Collections8.list(false, true)) {
+                    HashMap<String, String> tamperedHeaders = new HashMap<>(headers);
+                    if (refreshDigest) {
+                        tamperedHeaders.put("Content-Digest", Protocol.contentDigestSha256(tampered));
+                    }
+                    Class<? extends JoogopayException> expectedError = refreshDigest
+                            ? JoogopayException.InvalidSignature.class : JoogopayException.Webhook.class;
+                    assertThrows(expectedError,
+                            () -> client.parsePayoutWebhook("POST", "/webhook/payouts", tamperedHeaders, tampered));
+                }
+            }
+
+            if (payload.path("receiver").has("documentNumber")) {
+                ((com.fasterxml.jackson.databind.node.ObjectNode) payload.get("receiver"))
+                        .put("documentNumber", "11234567890");
+                byte[] tampered = MAPPER.writeValueAsBytes(payload);
+                for (boolean refreshDigest : Collections8.list(false, true)) {
+                    HashMap<String, String> tamperedHeaders = new HashMap<>(headers);
+                    if (refreshDigest) {
+                        tamperedHeaders.put("Content-Digest", Protocol.contentDigestSha256(tampered));
+                    }
+                    Class<? extends JoogopayException> expectedError = refreshDigest
+                            ? JoogopayException.InvalidSignature.class : JoogopayException.Webhook.class;
+                    assertThrows(expectedError,
+                            () -> client.parsePayoutWebhook("POST", "/webhook/payouts", tamperedHeaders, tampered),
+                            "altered receiver.documentNumber, refreshed digest=" + refreshDigest);
+                }
+            }
+        }
     }
 
     @Test
@@ -370,18 +457,18 @@ class ClientTest {
         JsonNode hook = load("webhook/002-payment-payer.json");
         Client client = baseBuilder()
                 .clock(() -> 1787803300L)
-                .platformWebhookPublicKeys(Map.of(
+                .platformWebhookPublicKeys(Collections8.map(
                         hook.get("key").get("platformWebhookKeyId").asText(),
                         hook.get("key").get("platformWebhookPublicKeyBase64").asText()))
                 .transport(transport(new Captured(), 200, envelopeJson("{}")))
                 .build();
-        for (String field : List.of("name", "documentNumber")) {
-            for (boolean refreshDigest : List.of(false, true)) {
-                var payload = MAPPER.readTree(hook.get("body").asText());
+        for (String field : Collections8.list("name", "documentNumber")) {
+            for (boolean refreshDigest : Collections8.list(false, true)) {
+                JsonNode payload = MAPPER.readTree(hook.get("body").asText());
                 ((com.fasterxml.jackson.databind.node.ObjectNode) payload.get("payer"))
                         .put(field, field.equals("name") ? "Other Name" : "11234567890");
                 byte[] body = MAPPER.writeValueAsBytes(payload);
-                var headers = hookHeaders(hook);
+                Map<String, String> headers = hookHeaders(hook);
                 if (refreshDigest) {
                     headers.put("Content-Digest", Protocol.contentDigestSha256(body));
                 }
@@ -402,11 +489,11 @@ class ClientTest {
         JsonNode hook = load("webhook/001-payment-succeeded.json");
         Client client = baseBuilder()
                 .clock(() -> 1787803300L)
-                .platformWebhookPublicKeys(Map.of("wk_other",
+                .platformWebhookPublicKeys(Collections8.map("wk_other",
                         hook.get("key").get("platformWebhookPublicKeyBase64").asText()))
                 .transport(transport(new Captured(), 200, envelopeJson("{}")))
                 .build();
-        var error = assertThrows(JoogopayException.Webhook.class,
+        JoogopayException.Webhook error = assertThrows(JoogopayException.Webhook.class,
                 () -> client.parsePaymentWebhook(
                         hook.get("input").get("method").asText(),
                         hook.get("input").get("path").asText(), hookHeaders(hook),
@@ -448,7 +535,7 @@ class ClientTest {
     @Test
     void webhookRejectsEventIdMismatch() throws IOException {
         JsonNode hook = load("webhook/001-payment-succeeded.json");
-        var headers = hookHeaders(hook);
+        Map<String, String> headers = hookHeaders(hook);
         headers.put("Webhook-Event-Id", "evt_0000000000000000000000000Z");
         Client client = baseBuilder()
                 .clock(() -> 1787803300L)
@@ -474,9 +561,9 @@ class ClientTest {
         cases.put("invalid merchant private key", b -> b.merchantPrivateKeyBase64("bm90LWEta2V5"));
         cases.put("empty platformBodyKeyId", b -> b.platformBodyKeyId(""));
         cases.put("platform body public key of the wrong length", b -> b.platformBodyPublicKeyBase64("c2hvcnQ="));
-        cases.put("empty webhook key set", b -> b.platformWebhookPublicKeys(Map.of()));
+        cases.put("empty webhook key set", b -> b.platformWebhookPublicKeys(Collections8.map()));
 
-        for (var entry : cases.entrySet()) {
+        for (Map.Entry<String, Consumer<Client.Builder>> entry : cases.entrySet()) {
             Client.Builder builder = baseBuilder()
                     .transport(transport(new Captured(), 200, envelopeJson("{}")));
             entry.getValue().accept(builder);
@@ -486,13 +573,13 @@ class ClientTest {
 
     @Test
     void submitPaymentTradeNoIsPlainJsonAndUnsigned() throws IOException {
-        var captured = new Captured();
+        Captured captured = new Captured();
         Client client = baseBuilder()
                 .transport(transport(captured, 200,
                         envelopeJson("{\"status\":1,\"orderStatus\":\"PENDING\"}")))
                 .build();
 
-        var got = client.submitPaymentTradeNo("P1", "UTR123");
+        Map<String, Object> got = client.submitPaymentTradeNo("P1", "UTR123");
         assertEquals(1, ((Number) got.get("status")).intValue());
         assertEquals("PENDING", got.get("orderStatus"));
 
@@ -508,13 +595,13 @@ class ClientTest {
     /** A refusal is also HTTP 200 with code 200; no exception does not mean accepted. */
     @Test
     void submitPaymentTradeNoRefusalIsNotAnException() throws IOException {
-        var captured = new Captured();
+        Captured captured = new Captured();
         Client client = baseBuilder()
                 .transport(transport(captured, 200, envelopeJson(
                         "{\"status\":0,\"message\":\"too many requests, please retry later\"}")))
                 .build();
 
-        var got = client.submitPaymentTradeNo("P1", "UTR123");
+        Map<String, Object> got = client.submitPaymentTradeNo("P1", "UTR123");
         assertEquals(0, ((Number) got.get("status")).intValue());
         assertTrue(String.valueOf(got.get("message")).contains("too many requests"));
     }
@@ -522,7 +609,7 @@ class ClientTest {
     @Test
     void submitPaymentTradeNoRequiresBothFields() throws IOException {
         Client client = baseBuilder().transport(transport(new Captured(), 200, envelopeJson("{}"))).build();
-        for (String[] tc : List.of(
+        for (String[] tc : Collections8.list(
                 new String[] {"", "UTR"},
                 new String[] {"P1", ""},
                 new String[] {" ", "UTR"},
@@ -535,26 +622,26 @@ class ClientTest {
     @Test
     void supplementPaymentIsSignedEncryptedPostWithOneLocator() throws IOException {
         JsonNode bodyVector = load("bodycrypt/001-sealed-box.json");
-        var captured = new Captured();
+        Captured captured = new Captured();
         Client client = baseBuilder()
                 .transport(transport(captured, 200, envelopeJson(
                         "{\"orderNo\":\"P1\",\"merchantOrderNo\":\"M1\",\"status\":\"PROCESSING\","
                                 + "\"amount\":\"100.00\",\"currency\":\"INR\"}")))
                 .build();
 
-        var byOrderNo = new HashMap<String, Object>();
+        HashMap<String, Object> byOrderNo = new HashMap<String, Object>();
         byOrderNo.put("orderNo", " P1 ");
         byOrderNo.put("tradeNo", " 123456789012 ");
-        var byMerchantOrderNo = new HashMap<String, Object>();
+        HashMap<String, Object> byMerchantOrderNo = new HashMap<String, Object>();
         byMerchantOrderNo.put("merchantOrderNo", "M1");
         byMerchantOrderNo.put("orderNo", " ");
         byMerchantOrderNo.put("tradeNo", "123456789012");
 
-        for (var tc : List.of(
-                Map.entry(byOrderNo, "{\"orderNo\":\"P1\",\"tradeNo\":\"123456789012\"}"),
-                Map.entry(byMerchantOrderNo, "{\"merchantOrderNo\":\"M1\",\"tradeNo\":\"123456789012\"}"))) {
+        for (Map.Entry<? extends Map<String, Object>, String> tc : Collections8.list(
+                Collections8.entry(byOrderNo, "{\"orderNo\":\"P1\",\"tradeNo\":\"123456789012\"}"),
+                Collections8.entry(byMerchantOrderNo, "{\"merchantOrderNo\":\"M1\",\"tradeNo\":\"123456789012\"}"))) {
             String key = Protocol.newNonce();
-            var order = client.supplementPayment(tc.getKey(), key);
+            Map<String, Object> order = client.supplementPayment(tc.getKey(), key);
             assertEquals("P1", order.get("orderNo"));
             assertEquals(Status.PROCESSING, order.get("status"));
 
@@ -565,7 +652,7 @@ class ClientTest {
             assertEquals("mak_live_test", captured.headers.get("merchant-access-key"));
             assertTrue(captured.headers.get("signature").startsWith("merchant=:"));
             assertEquals(Protocol.contentDigestSha256(captured.body), captured.headers.get("content-digest"));
-            var opened = Protocol.openBodyEnvelope(
+            Map.Entry<byte[], String> opened = Protocol.openBodyEnvelope(
                     captured.body,
                     B64.decode(bodyVector.get("platformBodyPublicKeyBase64").asText()),
                     B64.decode(bodyVector.get("platformBodyPrivateKeyBase64").asText()));
@@ -575,13 +662,13 @@ class ClientTest {
 
     @Test
     void supplementPaymentValidatesLocally() throws IOException {
-        var captured = new Captured();
+        Captured captured = new Captured();
         Client client = baseBuilder().transport(transport(captured, 200, envelopeJson("{}"))).build();
-        for (var tc : List.<Map<String, Object>>of(
-                Map.of("orderNo", "P1"),
-                Map.of("orderNo", "P1", "tradeNo", " "),
-                Map.of("tradeNo", "123456789012"),
-                Map.of("orderNo", "P1", "merchantOrderNo", "M1", "tradeNo", "123456789012"))) {
+        for (Map<String, Object> tc : Collections8.<Map<String, Object>>list(
+                Collections8.map("orderNo", "P1"),
+                Collections8.map("orderNo", "P1", "tradeNo", " "),
+                Collections8.map("tradeNo", "123456789012"),
+                Collections8.map("orderNo", "P1", "merchantOrderNo", "M1", "tradeNo", "123456789012"))) {
             assertThrows(JoogopayException.Request.class, () -> client.supplementPayment(tc),
                     tc.toString());
         }
@@ -595,8 +682,8 @@ class ClientTest {
                         + "\"traceId\":\"trace-ch\",\"data\":{\"message\":\"channel did not accept the reference\"}}")
                         .getBytes(StandardCharsets.UTF_8)))
                 .build();
-        var error = assertThrows(JoogopayException.Api.class,
-                () -> client.supplementPayment(Map.of("orderNo", "P1", "tradeNo", "123456789012")));
+        JoogopayException.Api error = assertThrows(JoogopayException.Api.class,
+                () -> client.supplementPayment(Collections8.map("orderNo", "P1", "tradeNo", "123456789012")));
         assertEquals(422, error.httpStatus);
         assertEquals(12100019, error.code);
         assertEquals("CHANNEL_ERROR", error.msg);
@@ -605,14 +692,14 @@ class ClientTest {
 
     @Test
     void addPaymentExtraInfoOmitsOptionalFields() throws IOException {
-        var captured = new Captured();
+        Captured captured = new Captured();
         Client client = baseBuilder()
                 .transport(transport(captured, 200, envelopeJson(
                         "{\"status\":1,\"paymentUrl\":\"https://h5.example/p/1\"}")))
                 .build();
 
-        var got = client.addPaymentExtraInfo(
-                "P1", "PK_JAZZCASH", Map.of("mobile", "03001234567"));
+        Map<String, Object> got = client.addPaymentExtraInfo(
+                "P1", "PK_JAZZCASH", Collections8.map("mobile", "03001234567"));
         assertEquals("https://h5.example/p/1", got.get("paymentUrl"));
         assertEquals("https://api.example.com/api/v1/payment/addExtraInfo", captured.url);
         assertEquals(
@@ -635,28 +722,34 @@ class ClientTest {
     }
 
     private static Map<String, Object> payReq(String currency, Map<String, Object> method) {
-        return Map.of("merchantOrderNo", "M1", "currency", currency, "amount", "1.00",
+        return Collections8.map("merchantOrderNo", "M1", "currency", currency, "amount", "1.00",
                 "paymentMethod", method, "webhookUrl", "https://m.example.com/w");
     }
 
     @Test
     void validateRejectsBadMethodShape() throws IOException {
         Client c = validatingClient();
-        record Case(String ccy, Map<String, Object> method, String fragment) {}
-        var cases = List.of(
-                new Case("BRL", Map.of(), "code is required"),
-                new Case("PKR", Map.of("code", "PK_JAZZCASH",
-                        "pkJazzcash", Map.of("mobile", "03001234567"),
-                        "pkEasypaisa", Map.of("mobile", "03001234567")), "only one method extra"),
-                new Case("PKR", Map.of("code", "PK_JAZZCASH",
-                        "pkEasypaisa", Map.of("mobile", "03001234567")), "does not match code"),
-                new Case("PKR", Map.of("code", "PH_GCASH",
-                        "phGcash", Map.of("mobile", "09171234567")), "not available for this currency"),
-                new Case("IDR", Map.of("code", "ID_VA", "idVa",
-                        Map.of("accountName", "Budi", "email", "b@example.com", "mobile", "0812")),
+        class Case {
+            final String ccy, fragment; final Map<String, Object> method;
+            Case(String ccy, Map<String, Object> method, String fragment) { this.ccy = ccy; this.method = method; this.fragment = fragment; }
+            String ccy() { return ccy; }
+            Map<String, Object> method() { return method; }
+            String fragment() { return fragment; }
+        }
+        List<Case> cases = Collections8.list(
+                new Case("BRL", Collections8.map(), "code is required"),
+                new Case("PKR", Collections8.map("code", "PK_JAZZCASH",
+                        "pkJazzcash", Collections8.map("mobile", "03001234567"),
+                        "pkEasypaisa", Collections8.map("mobile", "03001234567")), "only one method extra"),
+                new Case("PKR", Collections8.map("code", "PK_JAZZCASH",
+                        "pkEasypaisa", Collections8.map("mobile", "03001234567")), "does not match code"),
+                new Case("PKR", Collections8.map("code", "PH_GCASH",
+                        "phGcash", Collections8.map("mobile", "09171234567")), "not available for this currency"),
+                new Case("IDR", Collections8.map("code", "ID_VA", "idVa",
+                        Collections8.map("accountName", "Budi", "email", "b@example.com", "mobile", "0812")),
                         "extra.bankCode"));
         for (Case tc : cases) {
-            var ex = assertThrows(JoogopayException.Request.class,
+            JoogopayException.Request ex = assertThrows(JoogopayException.Request.class,
                     () -> c.createPayment(payReq(tc.ccy(), tc.method())));
             assertTrue(ex.getMessage().contains(tc.fragment()),
                     "want '" + tc.fragment() + "' in: " + ex.getMessage());
@@ -666,18 +759,18 @@ class ClientTest {
     @Test
     void validateAllowsValidRequests() throws IOException {
         Client c = validatingClient();
-        var ok = List.of(
+        List<Map<String, Object>> ok = Collections8.list(
                 // PKR / PHP pay-in has no required extra; omitting it entirely is valid
-                payReq("PKR", Map.of("code", "PK_JAZZCASH")),
-                payReq("PKR", Map.of("code", "PK_JAZZCASH",
-                        "pkJazzcash", Map.of("mobile", "03001234567"))),
-                payReq("PHP", Map.of("code", "PH_GCASH")),
-                payReq("IDR", Map.of("code", "ID_VA", "idVa", Map.of(
+                payReq("PKR", Collections8.map("code", "PK_JAZZCASH")),
+                payReq("PKR", Collections8.map("code", "PK_JAZZCASH",
+                        "pkJazzcash", Collections8.map("mobile", "03001234567"))),
+                payReq("PHP", Collections8.map("code", "PH_GCASH")),
+                payReq("IDR", Collections8.map("code", "ID_VA", "idVa", Collections8.map(
                         "accountName", "Budi", "email", "b@example.com",
                         "mobile", "0812", "bankCode", "BCA"))),
-                payReq("XYZ", Map.of("code", "WHATEVER")),  // unknown currency is not blocked
-                payReq("BRL", Map.of("code", "PIX")));      // no code whitelist for this currency, so no rejection
-        for (var req : ok) {
+                payReq("XYZ", Collections8.map("code", "WHATEVER")),  // unknown currency is not blocked
+                payReq("BRL", Collections8.map("code", "PIX")));      // no code whitelist for this currency, so no rejection
+        for (Map<String, Object> req : ok) {
             c.createPayment(req);
         }
     }
@@ -690,18 +783,18 @@ class ClientTest {
     void validateHandlesConditionalRequired() throws IOException {
         Client c = validatingClient();
         java.util.function.Function<Map<String, Object>, Map<String, Object>> payout =
-                m -> Map.of("merchantOrderNo", "M1", "currency", "INR", "amount", "1.00",
+                m -> Collections8.map("merchantOrderNo", "M1", "currency", "INR", "amount", "1.00",
                         "payoutMethod", m, "webhookUrl", "https://m.example.com/w");
 
-        c.createPayout(payout.apply(Map.of("code", "IN_UPI", "inUpi", Map.of(
+        c.createPayout(payout.apply(Collections8.map("code", "IN_UPI", "inUpi", Collections8.map(
                 "account", "mary@upi", "name", "Mary",
                 "email", "m@example.com", "mobile", "9871476369"))));
 
         assertThrows(JoogopayException.Request.class,
-                () -> c.createPayout(payout.apply(Map.of("code", "IN_IFSC", "inIfsc", Map.of(
+                () -> c.createPayout(payout.apply(Collections8.map("code", "IN_IFSC", "inIfsc", Collections8.map(
                         "name", "Mary", "email", "m@example.com", "mobile", "9871476369")))));
 
-        c.createPayout(payout.apply(Map.of("code", "IN_IFSC", "inIfsc", Map.of(
+        c.createPayout(payout.apply(Collections8.map("code", "IN_IFSC", "inIfsc", Collections8.map(
                 "account", "123456789", "ifsc", "HDFC0001234", "name", "Mary",
                 "email", "m@example.com", "mobile", "9871476369"))));
     }
@@ -712,28 +805,28 @@ class ClientTest {
     void validateAcceptsIdrWalletPayouts() throws IOException {
         Client c = validatingClient();
         // accountNo is the wallet-registered phone number and receives the funds; mobile is a contact number.
-        java.util.function.Function<String, Map<String, Object>> extra = wallet -> Map.of(
+        java.util.function.Function<String, Map<String, Object>> extra = wallet -> Collections8.map(
                 "bankCode", wallet, "accountNo", "081234567890", "accountName", "Budi",
                 "email", "b@example.com", "mobile", "089999999999");
         java.util.function.Function<Map<String, Object>, Map<String, Object>> payout =
-                m -> Map.of("merchantOrderNo", "M1", "currency", "IDR", "amount", "10000",
+                m -> Collections8.map("merchantOrderNo", "M1", "currency", "IDR", "amount", "10000",
                         "payoutMethod", m, "webhookUrl", "https://m.example.com/w");
 
         for (String[] w : new String[][] {{"ID_DANA", "idDana", "DANA"}, {"ID_OVO", "idOvo", "OVO"},
                 {"ID_GOPAY", "idGopay", "GOPAY"}, {"ID_LINKAJA", "idLinkaja", "LINKAJA"},
                 {"ID_SHOPEEPAY", "idShopeepay", "SHOPEEPAY"}}) {
-            c.createPayout(payout.apply(Map.of("code", w[0], w[1], extra.apply(w[2]))));
+            c.createPayout(payout.apply(Collections8.map("code", w[0], w[1], extra.apply(w[2]))));
         }
 
-        var ex = assertThrows(JoogopayException.Request.class,
-                () -> c.createPayout(payout.apply(Map.of("code", "ID_DANA", "idOvo", extra.apply("OVO")))));
+        JoogopayException.Request ex = assertThrows(JoogopayException.Request.class,
+                () -> c.createPayout(payout.apply(Collections8.map("code", "ID_DANA", "idOvo", extra.apply("OVO")))));
         assertTrue(ex.getMessage().contains("does not match code"), ex.getMessage());
 
         // accountNo is required for wallets as well; mobile never stands in for it.
-        var noAccount = new java.util.HashMap<>(extra.apply("DANA"));
+        HashMap<String, Object> noAccount = new java.util.HashMap<>(extra.apply("DANA"));
         noAccount.put("accountNo", "");
-        var missing = assertThrows(JoogopayException.Request.class,
-                () -> c.createPayout(payout.apply(Map.of("code", "ID_DANA", "idDana", noAccount))));
+        JoogopayException.Request missing = assertThrows(JoogopayException.Request.class,
+                () -> c.createPayout(payout.apply(Collections8.map("code", "ID_DANA", "idDana", noAccount))));
         assertTrue(missing.getMessage().contains("extra.accountNo"), missing.getMessage());
     }
 
@@ -741,21 +834,21 @@ class ClientTest {
     @Test
     void validateAcceptsPhWalletPayouts() throws IOException {
         Client c = validatingClient();
-        java.util.function.Supplier<Map<String, Object>> extra = () -> Map.of(
+        java.util.function.Supplier<Map<String, Object>> extra = () -> Collections8.map(
                 "accountNo", "09171234567", "accountName", "Juan",
                 "email", "j@example.com", "mobile", "09171234567");
         java.util.function.Function<Map<String, Object>, Map<String, Object>> payout =
-                m -> Map.of("merchantOrderNo", "M1", "currency", "PHP", "amount", "100.00",
+                m -> Collections8.map("merchantOrderNo", "M1", "currency", "PHP", "amount", "100.00",
                         "payoutMethod", m, "webhookUrl", "https://m.example.com/w");
 
         for (String[] w : new String[][] {{"PH_GCASH", "phGcash"}, {"PH_MAYA", "phMaya"}}) {
-            c.createPayout(payout.apply(Map.of("code", w[0], w[1], extra.get())));
+            c.createPayout(payout.apply(Collections8.map("code", w[0], w[1], extra.get())));
         }
 
         // PH_DF_WALLET is kept for existing integrations; there bankCode names the wallet.
         for (String[] b : new String[][] {{"PH_DF_BANK", "phDfBank"}, {"PH_DF_WALLET", "phDfWallet"}}) {
-            var ex = assertThrows(JoogopayException.Request.class,
-                    () -> c.createPayout(payout.apply(Map.of("code", b[0], b[1], extra.get()))));
+            JoogopayException.Request ex = assertThrows(JoogopayException.Request.class,
+                    () -> c.createPayout(payout.apply(Collections8.map("code", b[0], b[1], extra.get()))));
             assertTrue(ex.getMessage().contains("extra.bankCode"), ex.getMessage());
         }
     }
@@ -763,12 +856,12 @@ class ClientTest {
     // means the Java implementation disagrees with the protocol; fix the SDK, not the vectors.
 
     private static String validationFragment(JsonNode c) {
-        return switch (c.get("reason").asText()) {
-            case "missing_required_field" -> "required field is empty: " + c.get("field").asText();
-            case "invalid_amount" -> "amount must be";
-            case "invalid_webhook_url" -> "webhookUrl must be";
-            default -> throw new IllegalArgumentException("unknown reason " + c.get("reason"));
-        };
+        switch (c.get("reason").asText()) {
+            case "missing_required_field": return "required field is empty: " + c.get("field").asText();
+            case "invalid_amount": return "amount must be";
+            case "invalid_webhook_url": return "webhookUrl must be";
+            default: throw new IllegalArgumentException("unknown reason " + c.get("reason"));
+        }
     }
 
     @Test
@@ -776,8 +869,8 @@ class ClientTest {
         Client c = validatingClient();
         Path dir = TESTDATA.resolve("validation");
         List<Path> files;
-        try (var stream = Files.list(dir)) {
-            files = stream.filter(p -> p.toString().endsWith(".json")).sorted().toList();
+        try (java.util.stream.Stream<Path> stream = Files.list(dir)) {
+            files = stream.filter(p -> p.toString().endsWith(".json")).sorted().collect(java.util.stream.Collectors.toList());
         }
         assertFalse(files.isEmpty(), "no validation vectors in " + dir);
         for (Path file : files) {
@@ -785,7 +878,7 @@ class ClientTest {
             boolean payment = "payment".equals(vector.get("direction").asText());
             for (JsonNode tc : vector.get("cases")) {
                 String label = file.getFileName() + " / " + tc.get("name").asText();
-                var body = new HashMap<String, Object>(
+                HashMap<String, Object> body = new HashMap<String, Object>(
                         MAPPER.convertValue(vector.get("base"), new TypeReference<Map<String, Object>>() {}));
                 body.putAll(MAPPER.convertValue(tc.get("override"), new TypeReference<Map<String, Object>>() {}));
                 Runnable call = () -> {
@@ -799,7 +892,7 @@ class ClientTest {
                     call.run();
                     continue;
                 }
-                var ex = assertThrows(JoogopayException.Request.class, call::run, label);
+                JoogopayException.Request ex = assertThrows(JoogopayException.Request.class, call::run, label);
                 String fragment = validationFragment(tc);
                 assertTrue(ex.getMessage().contains(fragment),
                         label + ": want '" + fragment + "', got " + ex.getMessage());
@@ -809,9 +902,9 @@ class ClientTest {
 
     @Test
     void receiptRejectsBlankAndTrimsOrderNo() throws IOException {
-        var captured = new Captured();
+        Captured captured = new Captured();
         Client c = baseBuilder().transport(transport(captured, 200, envelopeJson("{}"))).build();
-        for (String bad : List.of("", "  ", "\t")) {
+        for (String bad : Collections8.list("", "  ", "\t")) {
             assertThrows(JoogopayException.Request.class, () -> c.getPayoutReceipt(bad));
         }
         assertThrows(JoogopayException.Request.class, () -> c.getPayoutReceipt(null));
@@ -823,18 +916,18 @@ class ClientTest {
         Captured captured = new Captured();
         Client client = baseBuilder().transport(transport(captured, 200, envelopeJson("{}"))).build();
         JsonNode bodyKey = load("bodycrypt/001-sealed-box.json");
-        Map<String, Object> extra = new HashMap<>(Map.of(
+        Map<String, Object> extra = new HashMap<>(Collections8.map(
                 "firstName", "Ana", "lastName", "Perez", "email", "ana@example.com", "phone", "1123456789",
                 "documentType", "DNI", "documentNumber", "30123456",
                 "accountNo", "0000003100012345678901", "accountType", "CBU"));
-        java.util.function.Function<Map<String, Object>, Map<String, Object>> request = fields -> Map.of(
+        java.util.function.Function<Map<String, Object>, Map<String, Object>> request = fields -> Collections8.map(
                 "merchantOrderNo", "ars-address-001", "currency", "ARS", "amount", "1.00",
                 "webhookUrl", "https://merchant.example.com/webhook",
-                "payoutMethod", Map.of("code", "BANK_TRANSFER", "bankTransfer", fields));
-        for (String accountType : List.of("CBU", "CVU")) {
+                "payoutMethod", Collections8.map("code", "BANK_TRANSFER", "bankTransfer", fields));
+        for (String accountType : Collections8.list("CBU", "CVU")) {
             Map<String, Object> recipient = new HashMap<>(extra);
             recipient.put("accountType", accountType);
-            var accepted = new java.util.ArrayList<Map<String, Object>>();
+            java.util.ArrayList<Map<String, Object>> accepted = new java.util.ArrayList<Map<String, Object>>();
             accepted.add(new HashMap<>(recipient));
             for (String address : new String[]{null, "", " Av Example 123 "}) {
                 Map<String, Object> fields = new HashMap<>(recipient);
@@ -845,23 +938,23 @@ class ClientTest {
                 Map<String, Object> input = request.apply(fields);
                 JsonNode expected = MAPPER.valueToTree(input);
                 client.createPayout(input);
-                var opened = Protocol.openBodyEnvelope(captured.body,
+                Map.Entry<byte[], String> opened = Protocol.openBodyEnvelope(captured.body,
                         B64.decode(bodyKey.get("platformBodyPublicKeyBase64").asText()),
                         B64.decode(bodyKey.get("platformBodyPrivateKeyBase64").asText()));
                 assertEquals(expected, MAPPER.readTree(opened.getKey()));
                 assertEquals(expected, MAPPER.valueToTree(input), "caller input must remain unchanged");
             }
             byte[] lastBody = captured.body;
-            for (Object address : new Object[]{1, false, List.of(), Map.of()}) {
+            for (Object address : new Object[]{1, false, Collections8.list(), Collections8.map()}) {
                 Map<String, Object> invalid = new HashMap<>(recipient);
                 invalid.put("address", address);
-                var error = assertThrows(JoogopayException.Request.class,
+                JoogopayException.Request error = assertThrows(JoogopayException.Request.class,
                         () -> client.createPayout(request.apply(invalid)));
                 assertTrue(error.getMessage().contains("extra.address"));
                 assertTrue(captured.body == lastBody, "invalid address must fail before HTTP");
             }
             for (String field : recipient.keySet()) {
-                var invalidValues = new java.util.ArrayList<Map<String, Object>>();
+                java.util.ArrayList<Map<String, Object>> invalidValues = new java.util.ArrayList<Map<String, Object>>();
                 Map<String, Object> missing = new HashMap<>(recipient);
                 missing.remove(field);
                 invalidValues.add(missing);
@@ -871,7 +964,7 @@ class ClientTest {
                     invalidValues.add(invalid);
                 }
                 for (Map<String, Object> invalid : invalidValues) {
-                    var error = assertThrows(JoogopayException.Request.class,
+                    JoogopayException.Request error = assertThrows(JoogopayException.Request.class,
                             () -> client.createPayout(request.apply(invalid)));
                     assertTrue(error.getMessage().contains("extra." + field));
                     assertTrue(captured.body == lastBody, field + " must fail before HTTP");
@@ -884,7 +977,7 @@ class ClientTest {
     void usdWalletContract() throws Exception {
         JsonNode fixture = load("methods/001-usd-wallets.json");
         JsonNode bodyKey = load("bodycrypt/001-sealed-box.json");
-        var requests = new java.util.ArrayList<JsonNode>();
+        java.util.ArrayList<JsonNode> requests = new java.util.ArrayList<JsonNode>();
         requests.add(fixture.get("payment"));
         fixture.get("payouts").forEach(requests::add);
         for (JsonNode request : requests) {
@@ -894,24 +987,24 @@ class ClientTest {
             Captured captured = new Captured();
             Client client = baseBuilder().transport(transport(captured, 200, envelopeJson("{}"))).build();
             java.util.function.Function<JsonNode, Object> create = value -> {
-                Map<String, Object> map = MAPPER.convertValue(value, new com.fasterxml.jackson.core.type.TypeReference<>() {});
+                Map<String, Object> map = MAPPER.convertValue(value, new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
                 return methodField.equals("paymentMethod") ? client.createPayment(map) : client.createPayout(map);
             };
             create.apply(request);
-            var opened = Protocol.openBodyEnvelope(captured.body,
+            Map.Entry<byte[], String> opened = Protocol.openBodyEnvelope(captured.body,
                     B64.decode(bodyKey.get("platformBodyPublicKeyBase64").asText()),
                     B64.decode(bodyKey.get("platformBodyPrivateKeyBase64").asText()));
             assertEquals(request, MAPPER.readTree(opened.getKey()));
             byte[] lastBody = captured.body;
             for (String field : (Iterable<String>) () -> method.get(branch).fieldNames()) {
                 for (String empty : new String[] {null, "", "  "}) {
-                    var invalid = request.deepCopy();
+                    com.fasterxml.jackson.databind.node.ObjectNode invalid = request.deepCopy();
                     ((com.fasterxml.jackson.databind.node.ObjectNode) invalid.get(methodField).get(branch)).put(field, empty);
                     assertThrows(JoogopayException.Request.class, () -> create.apply(invalid));
                     assertTrue(captured.body == lastBody, field + " must fail before HTTP");
                 }
             }
-            var formats = request.deepCopy();
+            com.fasterxml.jackson.databind.node.ObjectNode formats = request.deepCopy();
             method.get(branch).fieldNames().forEachRemaining(field ->
                     ((com.fasterxml.jackson.databind.node.ObjectNode) formats.get(methodField).get(branch))
                             .put(field, "format-is-checked-by-gateway"));
@@ -924,15 +1017,15 @@ class ClientTest {
         JsonNode response = load("responses/005-payout-refunded.json");
         JsonNode hook = load("webhook/003-payout-refunded.json");
         Client client = baseBuilder().clock(() -> 1787803300L)
-                .platformWebhookPublicKeys(Map.of(hook.get("key").get("platformWebhookKeyId").asText(),
+                .platformWebhookPublicKeys(Collections8.map(hook.get("key").get("platformWebhookKeyId").asText(),
                         hook.get("key").get("platformWebhookPublicKeyBase64").asText()))
                 .transport(transport(new Captured(), 200, MAPPER.writeValueAsBytes(response.get("body"))))
                 .build();
-        var order = client.queryPayoutByOrderNo("PO202609240001");
-        var input = hook.get("input");
-        var payload = client.parsePayoutWebhook(input.get("method").asText(), input.get("path").asText(),
+        Map<String, Object> order = client.queryPayoutByOrderNo("PO202609240001");
+        JsonNode input = hook.get("input");
+        Map<String, Object> payload = client.parsePayoutWebhook(input.get("method").asText(), input.get("path").asText(),
                 hookHeaders(hook), hook.get("body").asText().getBytes(StandardCharsets.UTF_8), input.get("rawQuery").asText());
-        for (var result : java.util.List.of(order, payload)) {
+        for (Map<String, Object> result : Collections8.list(order, payload)) {
             assertEquals(Status.REFUNDED, result.get("status"));
             assertEquals("R202609240001", result.get("refundNo"));
             assertEquals("100.00", result.get("refundAmount"));

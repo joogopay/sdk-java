@@ -50,16 +50,16 @@ public final class Protocol {
     public static final int ED25519_SIGNATURE_SIZE = 64;
 
     /** Covered components in signature-base order; the lists are fixed by the protocol. */
-    public static final List<String> MERCHANT_WRITE_COVERED = List.of(
+    public static final List<String> MERCHANT_WRITE_COVERED = Collections8.list(
             "@method", "@path", "content-type", "content-encryption",
             "content-digest", "idempotency-key", "merchant-access-key");
-    public static final List<String> MERCHANT_READ_COVERED = List.of(
+    public static final List<String> MERCHANT_READ_COVERED = Collections8.list(
             "@method", "@path", "@query", "merchant-access-key");
-    public static final List<String> PLATFORM_COVERED = List.of(
+    public static final List<String> PLATFORM_COVERED = Collections8.list(
             "@method", "@path", "@query", "content-type", "content-digest", "webhook-event-id");
 
     /** Public lookup fields a signed GET query may carry. */
-    public static final Set<String> ALLOWED_READ_QUERY_FIELDS = Set.of(
+    public static final Set<String> ALLOWED_READ_QUERY_FIELDS = Collections8.set(
             "orderNo", "merchantOrderNo", "currency", "payMethod", "status",
             "startTime", "endTime", "page", "pageSize", "consentNo",
             "subscriptionPaymentNo", "planNo", "merchantPlanNo", "merchantCustomerNo",
@@ -68,7 +68,7 @@ public final class Protocol {
     private static final String CROCKFORD32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
     private static final SecureRandom RANDOM = new SecureRandom();
 
-    private static final Map<String, String> COMPONENT_HEADERS = Map.of(
+    private static final Map<String, String> COMPONENT_HEADERS = Collections8.map(
             "content-type", "Content-Type",
             "content-encryption", HEADER_CONTENT_ENCRYPTION,
             "content-digest", HEADER_CONTENT_DIGEST,
@@ -80,18 +80,64 @@ public final class Protocol {
     }
 
     /** RFC 9421 signature parameters of the fixed profile; keyId is set only for platform webhooks. */
-    public record SignatureParams(
-            String label,
-            List<String> covered,
-            long created,
-            long expires,
-            String nonce,
-            String keyId,
-            String alg) {
+    public static final class SignatureParams {
+        private final String label;
+        private final List<String> covered;
+        private final long created;
+        private final long expires;
+        private final String nonce;
+        private final String keyId;
+        private final String alg;
+        public SignatureParams(String label, List<String> covered, long created, long expires, String nonce, String keyId, String alg) {
+            this.label = label;
+            this.covered = covered;
+            this.created = created;
+            this.expires = expires;
+            this.nonce = nonce;
+            this.keyId = keyId;
+            this.alg = alg;
+        }
+        public String label() { return label; }
+        public List<String> covered() { return covered; }
+        public long created() { return created; }
+        public long expires() { return expires; }
+        public String nonce() { return nonce; }
+        public String keyId() { return keyId; }
+        public String alg() { return alg; }
+        @Override public boolean equals(Object value) {
+            if (this == value) return true;
+            if (!(value instanceof SignatureParams)) return false;
+            SignatureParams other = (SignatureParams) value;
+            return java.util.Objects.equals(label, other.label) && java.util.Objects.equals(covered, other.covered) && java.util.Objects.equals(created, other.created) && java.util.Objects.equals(expires, other.expires) && java.util.Objects.equals(nonce, other.nonce) && java.util.Objects.equals(keyId, other.keyId) && java.util.Objects.equals(alg, other.alg);
+        }
+        @Override public int hashCode() { return java.util.Objects.hash(label, covered, created, expires, nonce, keyId, alg); }
+        @Override public String toString() { return "SignatureParams[" + "label=" + label + ", " + "covered=" + covered + ", " + "created=" + created + ", " + "expires=" + expires + ", " + "nonce=" + nonce + ", " + "keyId=" + keyId + ", " + "alg=" + alg + "]"; }
     }
 
     /** Encrypted wire body of a merchant POST. */
-    public record BodyEnvelope(int version, String alg, String keyId, String ciphertext) {
+    public static final class BodyEnvelope {
+        private final int version;
+        private final String alg;
+        private final String keyId;
+        private final String ciphertext;
+        public BodyEnvelope(int version, String alg, String keyId, String ciphertext) {
+            this.version = version;
+            this.alg = alg;
+            this.keyId = keyId;
+            this.ciphertext = ciphertext;
+        }
+        public int version() { return version; }
+        public String alg() { return alg; }
+        public String keyId() { return keyId; }
+        public String ciphertext() { return ciphertext; }
+        @Override public boolean equals(Object value) {
+            if (this == value) return true;
+            if (!(value instanceof BodyEnvelope)) return false;
+            BodyEnvelope other = (BodyEnvelope) value;
+            return java.util.Objects.equals(version, other.version) && java.util.Objects.equals(alg, other.alg) && java.util.Objects.equals(keyId, other.keyId) && java.util.Objects.equals(ciphertext, other.ciphertext);
+        }
+        @Override public int hashCode() { return java.util.Objects.hash(version, alg, keyId, ciphertext); }
+        @Override public String toString() { return "BodyEnvelope[" + "version=" + version + ", " + "alg=" + alg + ", " + "keyId=" + keyId + ", " + "ciphertext=" + ciphertext + "]"; }
     }
 
     private static SignatureParams makeParams(
@@ -136,14 +182,14 @@ public final class Protocol {
     }
 
     public static String signatureInputValue(SignatureParams params) {
-        var components = new StringBuilder();
+        StringBuilder components = new StringBuilder();
         for (int i = 0; i < params.covered().size(); i++) {
             if (i > 0) {
                 components.append(' ');
             }
             components.append(quote(params.covered().get(i)));
         }
-        var value = new StringBuilder()
+        StringBuilder value = new StringBuilder()
                 .append('(').append(components).append(')')
                 .append(";created=").append(params.created())
                 .append(";expires=").append(params.expires())
@@ -176,7 +222,7 @@ public final class Protocol {
         if (name == null) {
             throw new JoogopayException.InvalidHeader("unknown covered component: " + component);
         }
-        var lowered = new HashMap<String, String>();
+        HashMap<String, String> lowered = new HashMap<String, String>();
         if (headers != null) {
             headers.forEach((k, v) -> lowered.put(k.toLowerCase(Locale.ROOT), v));
         }
@@ -195,7 +241,7 @@ public final class Protocol {
         if (params.covered() == null || params.covered().isEmpty()) {
             throw new JoogopayException.InvalidHeader("empty covered components");
         }
-        var lines = new ArrayList<String>(params.covered().size() + 1);
+        ArrayList<String> lines = new ArrayList<String>(params.covered().size() + 1);
         for (String component : params.covered()) {
             lines.add(quote(component) + ": "
                     + componentValue(component, method, path, rawQuery, headers));
@@ -258,7 +304,7 @@ public final class Protocol {
         if (rawQuery == null || rawQuery.isEmpty()) {
             return;
         }
-        var seen = new HashMap<String, Boolean>();
+        HashMap<String, Boolean> seen = new HashMap<String, Boolean>();
         for (String pair : rawQuery.split("&")) {
             if (pair.isEmpty()) {
                 continue;
@@ -266,8 +312,12 @@ public final class Protocol {
             int idx = pair.indexOf('=');
             String key = idx < 0 ? pair : pair.substring(0, idx);
             String value = idx < 0 ? "" : pair.substring(idx + 1);
-            key = java.net.URLDecoder.decode(key, StandardCharsets.UTF_8);
-            value = java.net.URLDecoder.decode(value, StandardCharsets.UTF_8);
+            try {
+                key = java.net.URLDecoder.decode(key, "UTF-8");
+                value = java.net.URLDecoder.decode(value, "UTF-8");
+            } catch (java.io.UnsupportedEncodingException impossible) {
+                throw new AssertionError(impossible);
+            }
             if (!ALLOWED_READ_QUERY_FIELDS.contains(key)
                     || seen.containsKey(key)
                     || value.trim().isEmpty()) {
@@ -343,7 +393,7 @@ public final class Protocol {
         if (parts.length != expected) {
             throw new JoogopayException.InvalidHeader("bad Signature-Input params");
         }
-        var got = new LinkedHashMap<String, String>();
+        LinkedHashMap<String, String> got = new LinkedHashMap<String, String>();
         for (String part : parts) {
             int idx = part.indexOf('=');
             if (idx <= 0) {
@@ -356,7 +406,7 @@ public final class Protocol {
             got.put(key, part.substring(idx + 1));
         }
         for (String key : got.keySet()) {
-            if (!Set.of("created", "expires", "nonce", "keyid", "alg").contains(key)) {
+            if (!Collections8.set("created", "expires", "nonce", "keyid", "alg").contains(key)) {
                 throw new JoogopayException.InvalidHeader("unknown Signature-Input param: " + key);
             }
         }
@@ -430,7 +480,7 @@ public final class Protocol {
         if (label == null || label.isEmpty() || base == null || base.length == 0) {
             throw new JoogopayException.InvalidSignature("empty label or signature base");
         }
-        var signer = new Ed25519Signer();
+        Ed25519Signer signer = new Ed25519Signer();
         signer.init(true, privateKey(privateKeyBytes));
         signer.update(base, 0, base.length);
         return signatureHeader(label, signer.generateSignature());
@@ -442,7 +492,7 @@ public final class Protocol {
                 || signature == null || signature.length != ED25519_SIGNATURE_SIZE) {
             throw new JoogopayException.InvalidSignature("invalid ed25519 verify input");
         }
-        var verifier = new Ed25519Signer();
+        Ed25519Signer verifier = new Ed25519Signer();
         try {
             verifier.init(false, new Ed25519PublicKeyParameters(publicKey, 0));
         } catch (IllegalArgumentException e) {
@@ -514,25 +564,25 @@ public final class Protocol {
         } catch (RuntimeException e) {
             throw new JoogopayException.InvalidEnvelope("envelope is not valid json");
         }
-        if (!raw.keySet().equals(Set.of("version", "alg", "keyId", "ciphertext"))) {
+        if (!raw.keySet().equals(Collections8.set("version", "alg", "keyId", "ciphertext"))) {
             throw new JoogopayException.InvalidEnvelope("unexpected envelope fields");
         }
         Object version = raw.get("version");
         Object alg = raw.get("alg");
         Object keyId = raw.get("keyId");
         Object ciphertext = raw.get("ciphertext");
-        if (!(version instanceof Number number) || number.intValue() != 1
+        if (!(version instanceof Number) || ((Number) version).intValue() != 1
                 || !CONTENT_ENCRYPTION.equals(alg)
-                || !(keyId instanceof String keyIdValue) || !validHeaderValue(keyIdValue)
-                || !(ciphertext instanceof String ciphertextValue) || ciphertextValue.isEmpty()) {
+                || !(keyId instanceof String) || !validHeaderValue((String) keyId)
+                || !(ciphertext instanceof String) || ((String) ciphertext).isEmpty()) {
             throw new JoogopayException.InvalidEnvelope("invalid envelope");
         }
         try {
-            Base64.getDecoder().decode(ciphertextValue);
+            Base64.getDecoder().decode((String) ciphertext);
         } catch (IllegalArgumentException e) {
             throw new JoogopayException.InvalidEnvelope("invalid envelope ciphertext");
         }
-        return new BodyEnvelope(1, (String) alg, keyIdValue, ciphertextValue);
+        return new BodyEnvelope(1, (String) alg, (String) keyId, (String) ciphertext);
     }
 
     public static String peekBodyEnvelopeKeyId(byte[] wireBody) {
@@ -561,7 +611,7 @@ public final class Protocol {
         if (plaintext.length == 0 || plaintext.length > MAX_PLAIN_BODY_BYTES) {
             throw new JoogopayException.InvalidEnvelope("invalid plaintext size");
         }
-        return Map.entry(plaintext, envelope.keyId());
+        return Collections8.entry(plaintext, envelope.keyId());
     }
 
     static boolean constantTimeEquals(byte[] a, byte[] b) {

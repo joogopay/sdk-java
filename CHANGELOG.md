@@ -2,6 +2,14 @@
 
 Versions follow SemVer. Tags are `vX.Y.Z` on this repository.
 
+## v0.4.0 — 2026-10-28
+
+- Set the default pool capacity to 50 total/per-route connections and expose `Builder.maxConnections` for workload-specific limits.
+- Preserve JVM proxy and TLS system properties in the default transport. Reuse one connection pool per client; close SDK-owned pools with `Client.close()` while leaving injected transports to their owner.
+- Support Java 8, 11, 17 and 21 with Java 8 bytecode and an Apache HttpClient 5 transport with automatic retries and redirects disabled.
+- Add a standalone protocol adapter and offline checks; document webhook order ownership.
+- Update Bouncy Castle to 1.86.
+
 ## v0.3.0 — 2026-09-29
 
 - Added `supplementPayment`: signed `POST /api/v1/payments/trade-no` that submits

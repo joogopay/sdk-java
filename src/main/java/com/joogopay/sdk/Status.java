@@ -22,13 +22,13 @@ public final class Status {
      * Public order statuses. REFUNDED is payout-only; checkout progress is unchanged.
      */
     public static final Set<String> ALL =
-            Set.of(PENDING, PROCESSING, SUCCEEDED, FAILED, EXPIRED, CANCELED, REFUNDED);
+            Collections8.set(PENDING, PROCESSING, SUCCEEDED, FAILED, EXPIRED, CANCELED, REFUNDED);
 
     public static final String WEBHOOK_ORDER_TYPE_PAYMENT = "PAYMENT";
     public static final String WEBHOOK_ORDER_TYPE_PAYOUT = "PAYOUT";
 
     /** Public money fields; the guard test asserts each one is a decimal string. */
-    public static final List<String> MONEY_FIELDS = List.of(
+    public static final List<String> MONEY_FIELDS = Collections8.list(
             "amount", "paidAmount", "refundAmount", "minAmount", "maxAmount", "usdRate",
             "balance", "lockBalance", "paymentBalance", "paymentLockBalance",
             "payoutBalance", "payoutLockBalance");

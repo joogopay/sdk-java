@@ -6,7 +6,7 @@
 
   <groupId>com.joogopay</groupId>
   <artifactId>sdk</artifactId>
-  <version>0.3.0</version>
+  <version>0.4.0</version>
   <packaging>jar</packaging>
 
   <name>JooGoPay SDK</name>
@@ -34,7 +34,7 @@
   </scm>
 
   <properties>
-    <maven.compiler.release>17</maven.compiler.release>
+    <maven.compiler.release>8</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
   </properties>
 
@@ -43,7 +43,14 @@
     <dependency>
       <groupId>org.bouncycastle</groupId>
       <artifactId>bcprov-jdk18on</artifactId>
-      <version>1.78.1</version>
+      <version>1.86</version>
+    </dependency>
+
+    <!-- Java 8 transport; retries, redirects and automatic decompression are disabled. -->
+    <dependency>
+      <groupId>org.apache.httpcomponents.client5</groupId>
+      <artifactId>httpclient5</artifactId>
+      <version>5.6.5</version>
     </dependency>
 
     <!-- The JDK has no JSON implementation; pure Java, no native code. -->

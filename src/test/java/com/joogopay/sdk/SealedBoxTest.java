@@ -16,11 +16,11 @@ import org.junit.jupiter.api.Test;
 class SealedBoxTest {
 
     private static final Path VECTOR =
-            Path.of("protocol", "testdata", "bodycrypt", "001-sealed-box.json");
+            java.nio.file.Paths.get("protocol", "testdata", "bodycrypt", "001-sealed-box.json");
 
     /** Plain string scan so this test does not depend on the SDK's JSON layer. */
     private static String field(String json, String name) {
-        var marker = "\"" + name + "\"";
+        String marker = "\"" + name + "\"";
         int at = json.indexOf(marker);
         assertTrue(at >= 0, "vector missing field: " + name);
         int start = json.indexOf('"', json.indexOf(':', at) ) + 1;
@@ -30,8 +30,8 @@ class SealedBoxTest {
 
     @Test
     void opensCiphertextProducedByOtherLanguages() throws Exception {
-        var json = Files.readString(VECTOR, StandardCharsets.UTF_8);
-        var decoder = Base64.getDecoder();
+        String json = new String(Files.readAllBytes(VECTOR), StandardCharsets.UTF_8);
+        Base64.Decoder decoder = Base64.getDecoder();
 
         byte[] publicKey = decoder.decode(field(json, "platformBodyPublicKeyBase64"));
         byte[] privateKey = decoder.decode(field(json, "platformBodyPrivateKeyBase64"));
@@ -45,8 +45,8 @@ class SealedBoxTest {
 
     @Test
     void roundTrips() throws Exception {
-        var json = Files.readString(VECTOR, StandardCharsets.UTF_8);
-        var decoder = Base64.getDecoder();
+        String json = new String(Files.readAllBytes(VECTOR), StandardCharsets.UTF_8);
+        Base64.Decoder decoder = Base64.getDecoder();
         byte[] publicKey = decoder.decode(field(json, "platformBodyPublicKeyBase64"));
         byte[] privateKey = decoder.decode(field(json, "platformBodyPrivateKeyBase64"));
         byte[] plaintext = "{\"amount\":\"100.00\"}".getBytes(StandardCharsets.UTF_8);
@@ -58,8 +58,8 @@ class SealedBoxTest {
 
     @Test
     void rejectsTamperedCiphertext() throws Exception {
-        var json = Files.readString(VECTOR, StandardCharsets.UTF_8);
-        var decoder = Base64.getDecoder();
+        String json = new String(Files.readAllBytes(VECTOR), StandardCharsets.UTF_8);
+        Base64.Decoder decoder = Base64.getDecoder();
         byte[] publicKey = decoder.decode(field(json, "platformBodyPublicKeyBase64"));
         byte[] privateKey = decoder.decode(field(json, "platformBodyPrivateKeyBase64"));
         byte[] sealed = decoder.decode(field(json, "ciphertext"));

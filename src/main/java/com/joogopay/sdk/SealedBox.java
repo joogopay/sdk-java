@@ -51,11 +51,11 @@ final class SealedBox {
         if (recipientPublicKey == null || recipientPublicKey.length != PUBLIC_KEY_BYTES) {
             throw new IllegalArgumentException("recipient public key must be 32 bytes");
         }
-        var generator = new X25519KeyPairGenerator();
+        X25519KeyPairGenerator generator = new X25519KeyPairGenerator();
         generator.init(new X25519KeyGenerationParameters(RANDOM));
-        var pair = generator.generateKeyPair();
+        org.bouncycastle.crypto.AsymmetricCipherKeyPair pair = generator.generateKeyPair();
         byte[] ephemeralPk = ((X25519PublicKeyParameters) pair.getPublic()).getEncoded();
-        var ephemeralSk = (X25519PrivateKeyParameters) pair.getPrivate();
+        X25519PrivateKeyParameters ephemeralSk = (X25519PrivateKeyParameters) pair.getPrivate();
 
         byte[] nonce = sealNonce(ephemeralPk, recipientPublicKey);
         byte[] key = beforeNm(sharedSecret(ephemeralSk.getEncoded(), recipientPublicKey));
@@ -90,7 +90,7 @@ final class SealedBox {
     }
 
     private static byte[] sealNonce(byte[] ephemeralPk, byte[] recipientPk) {
-        var digest = new Blake2bDigest(NONCE_BYTES * 8);
+        Blake2bDigest digest = new Blake2bDigest(NONCE_BYTES * 8);
         digest.update(ephemeralPk, 0, ephemeralPk.length);
         digest.update(recipientPk, 0, recipientPk.length);
         byte[] nonce = new byte[NONCE_BYTES];
@@ -99,7 +99,7 @@ final class SealedBox {
     }
 
     private static byte[] sharedSecret(byte[] privateKey, byte[] publicKey) {
-        var agreement = new X25519Agreement();
+        X25519Agreement agreement = new X25519Agreement();
         agreement.init(new X25519PrivateKeyParameters(privateKey, 0));
         byte[] shared = new byte[agreement.getAgreementSize()];
         agreement.calculateAgreement(new X25519PublicKeyParameters(publicKey, 0), shared, 0);
@@ -116,7 +116,7 @@ final class SealedBox {
 
     /** crypto_secretbox_xsalsa20poly1305; output is tag || ciphertext. */
     private static byte[] secretBox(byte[] plaintext, byte[] nonce, byte[] key) {
-        var engine = new XSalsa20Engine();
+        XSalsa20Engine engine = new XSalsa20Engine();
         engine.init(true, new ParametersWithIV(new KeyParameter(key), nonce));
 
         // NaCl convention: the first 32 keystream bytes are the Poly1305 one-time key;
@@ -127,7 +127,7 @@ final class SealedBox {
         byte[] ciphertext = new byte[plaintext.length];
         engine.processBytes(plaintext, 0, plaintext.length, ciphertext, 0);
 
-        var poly = new Poly1305();
+        Poly1305 poly = new Poly1305();
         poly.init(new KeyParameter(subKey));
         poly.update(ciphertext, 0, ciphertext.length);
         byte[] tag = new byte[MAC_BYTES];
@@ -144,7 +144,7 @@ final class SealedBox {
         if (boxed.length < MAC_BYTES) {
             throw new IllegalArgumentException("ciphertext too short");
         }
-        var engine = new XSalsa20Engine();
+        XSalsa20Engine engine = new XSalsa20Engine();
         engine.init(false, new ParametersWithIV(new KeyParameter(key), nonce));
 
         byte[] subKey = new byte[32];
@@ -153,7 +153,7 @@ final class SealedBox {
         byte[] tag = Arrays.copyOfRange(boxed, 0, MAC_BYTES);
         byte[] ciphertext = Arrays.copyOfRange(boxed, MAC_BYTES, boxed.length);
 
-        var poly = new Poly1305();
+        Poly1305 poly = new Poly1305();
         poly.init(new KeyParameter(subKey));
         poly.update(ciphertext, 0, ciphertext.length);
         byte[] expected = new byte[MAC_BYTES];

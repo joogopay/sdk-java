@@ -4,6 +4,8 @@ Official SDK for integrating with the merchant open API. Signing, digests and bo
 are done by the SDK; you never assemble `Signature-Input`, `Content-Digest` or the sealed box
 envelope yourself.
 
+The SDK is optional. You may implement the same wire protocol with an approved crypto library and your existing framework; see [direct integration](./protocol/direct-integration.md).
+
 ## Protocol
 
 [`protocol/`](https://github.com/joogopay/sdk-java/tree/main/protocol/) is the source of truth, and the Go / JavaScript / PHP / Python / Java
@@ -26,17 +28,19 @@ Maven:
 <dependency>
   <groupId>com.joogopay</groupId>
   <artifactId>sdk</artifactId>
-  <version>0.3.0</version>
+  <version>0.4.0</version>
 </dependency>
 ```
 
 Gradle:
 
 ```
-implementation("com.joogopay:sdk:0.3.0")
+implementation("com.joogopay:sdk:0.4.0")
 ```
 
-Runtime dependencies: bouncycastle, jackson-databind. JDK 17 or newer.
+Runtime dependencies: Bouncy Castle 1.86, Jackson 2.17.2 and Apache HttpClient 5.6.5. The default HTTP transport disables automatic retries, redirects, cookies and decompression; custom transports remain supported. Java 8 or newer. Java 8, 11, 17 and 21 are covered by the test matrix.
+
+For Java 8 or an existing HTTP framework, use the [standalone protocol adapter](./examples/java8/README.md). It does not depend on this SDK and keeps your own HTTP client and JSON library.
 
 ## Configuration
 
@@ -62,23 +66,32 @@ import com.joogopay.sdk.Client;
 import com.joogopay.sdk.JoogopayException;
 import java.util.Map;
 
+Map<String, Object> pix = new java.util.LinkedHashMap<>();
+pix.put("payerName", "Joao Silva");
+Map<String, Object> paymentMethod = new java.util.LinkedHashMap<>();
+paymentMethod.put("code", "PIX");
+paymentMethod.put("pix", pix);
+Map<String, Object> request = new java.util.LinkedHashMap<>();
+request.put("merchantOrderNo", "M20260101001");
+request.put("currency", "BRL");
+request.put("amount", "100.00");
+request.put("paymentMethod", paymentMethod);
+request.put("webhookUrl", "https://merchant.example/webhook/payments");
+Map<String, String> webhookKeys = new java.util.LinkedHashMap<>();
+webhookKeys.put("pwhk_20260827_01", platformWebhookPublicKey);
+
+
 Client client = Client.builder()
-    .baseUrl("https://panama.joogopay.com")            // production origin; no /api/v1
+    .baseUrl("https://panama.joogopay.com")
     .accessKey("mak_live_xxx")
-    .merchantPrivateKeyBase64(merchantPrivateKey)          // merchant Ed25519 private key, base64
+    .merchantPrivateKeyBase64(merchantPrivateKey)
     .platformBodyKeyId("body_20260827_01")
-    .platformBodyPublicKeyBase64(platformBodyPublicKey)    // platform X25519 public key, base64
-    .platformWebhookPublicKeys(Map.of(                     // keyId -> platform Ed25519 public key, base64
-        "pwhk_20260827_01", platformWebhookPublicKey))
+    .platformBodyPublicKeyBase64(platformBodyPublicKey)
+    .platformWebhookPublicKeys(webhookKeys)
     .build();
 
-// Requests and responses are Map<String, Object>; keys match the API reference
-Map<String, Object> order = client.createPayment(Map.of(
-    "merchantOrderNo", "M20260101001",
-    "currency", "BRL",
-    "amount", "100.00",                                // decimal string, never BigDecimal / double
-    "paymentMethod", Map.of("code", "PIX", "pix", Map.of("payerName", "Joao Silva")),
-    "webhookUrl", "https://merchant.example/webhook/payments"));
+
+Map<String, Object> order = client.createPayment(request);
 System.out.println(order.get("orderNo") + " " + order.get("status"));
 ```
 
@@ -120,7 +133,7 @@ at <https://docs.joogopay.com>; its examples map one to one onto this SDK. The w
 [`protocol/merchant-api.md`](https://github.com/joogopay/sdk-java/blob/main/protocol/merchant-api.md). Key points:
 
 - After a create request times out, query by `merchantOrderNo` first instead of resending a new order; a deliberate retry repeats the same call with the same `merchantOrderNo`.
-- When the payer has transferred but the payment is still `PROCESSING`, submit their transfer reference with `client.supplementPayment(Map.of("orderNo", orderNo, "tradeNo", utr))` (or `merchantOrderNo` instead of `orderNo`, never both). Success only means the channel accepted the reference; the final status still comes from the webhook or a query.
+- When the payer has transferred but the payment is still `PROCESSING`, submit their transfer reference with `client.supplementPayment(request)` with a `Map<String, Object>` containing `orderNo` and `tradeNo` (or `merchantOrderNo` instead of `orderNo`, never both). Success only means the channel accepted the reference; the final status still comes from the webhook or a query.
 - For webhooks, hand the method, path, headers and the **unparsed raw body bytes** to `client.parsePaymentWebhook(method, path, headers, rawBody)`; when the webhook URL carries a query string, use the five-argument form and pass the raw query as well, because the platform signs it. The SDK checks the digest, event id, freshness window and Ed25519 signature. Return 2xx once processed and deduplicate by `eventId`.
 
 ## Amounts
@@ -151,3 +164,15 @@ mvn test
 The tests assert directly against the vectors in [`protocol/testdata`](https://github.com/joogopay/sdk-java/tree/main/protocol/testdata/):
 `Signature-Input`, the signature base and the signature value are compared byte for byte, and
 body encryption is verified by opening ciphertext produced by the reference implementation.
+
+## Webhook order matching
+
+Save the platform `orderNo` returned by creation under the expected merchant. After verification, match that number to the saved order and check order type, merchant order number, currency and applicable amounts before updating state. Do not credit or refund using `merchantOrderNo` alone. For an unknown platform order, reliably queue the event and query by `orderNo` with your own credentials before applying it. Deduplicate by `eventId`, commit the business update or durable queue acceptance before returning 2xx, and retry queued failures internally. See [webhook processing](./protocol/webhook.md#order-ownership-before-state-changes).
+
+## HTTP client lifetime
+
+Reuse one `Client` for the merchant's requests and call `client.close()` at application shutdown (or use try-with-resources). The default transport owns a reusable connection pool, honors JVM proxy/TLS system properties, and disables automatic retries and redirects. Closing cancels in-flight requests and releases the pool. The SDK does not close a caller-supplied `Transport`; its owner must manage that resource.
+
+The default pool permits 50 connections in total and per route. Set `Client.builder().maxConnections(value)` to a positive limit for your workload; this setting does not affect an injected transport. Requests above the limit wait for a connection and may time out with an unknown outcome.
+
+The Java timeout limits connection-pool acquisition, connection establishment and response read inactivity separately; it is not a whole-request deadline. A timeout leaves the business outcome unknown: query the original order before retrying.
