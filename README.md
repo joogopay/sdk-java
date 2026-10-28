@@ -28,14 +28,14 @@ Maven:
 <dependency>
   <groupId>com.joogopay</groupId>
   <artifactId>sdk</artifactId>
-  <version>0.4.0</version>
+  <version>0.4.1</version>
 </dependency>
 ```
 
 Gradle:
 
 ```
-implementation("com.joogopay:sdk:0.4.0")
+implementation("com.joogopay:sdk:0.4.1")
 ```
 
 Runtime dependencies: Bouncy Castle 1.86, Jackson 2.17.2 and Apache HttpClient 5.6.5. The default HTTP transport disables automatic retries, redirects, cookies and decompression; custom transports remain supported. Java 8 or newer. Java 8, 11, 17 and 21 are covered by the test matrix.

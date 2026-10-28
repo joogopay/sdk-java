@@ -2,6 +2,11 @@
 
 Versions follow SemVer. Tags are `vX.Y.Z` on this repository.
 
+## v0.4.1 — 2026-10-28
+
+- Upgrade the Central publishing plugin to 0.12.0 to remove Maven 3.10 staging metadata before bundling.
+- Wait for the deployment to reach published status before reporting release success.
+
 ## v0.4.0 — 2026-10-28
 
 - Set the default pool capacity to 50 total/per-route connections and expose `Builder.maxConnections` for workload-specific limits.
